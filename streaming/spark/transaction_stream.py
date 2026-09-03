@@ -162,5 +162,4 @@ query = (
     .start()
 )
 
-
 query.awaitTermination()

@@ -70,6 +70,29 @@ Ollama
 Production LLM:
 vLLM on AWS GPU infrastructure
 
+## Spark Data Lake Paths
+
+The Spark Bronze, Silver, and Gold jobs read their paths from `DATA_ROOT`.
+Set it to `data_lake` for local development or to an S3A URI for AWS:
+
+```text
+DATA_ROOT=data_lake
+# DATA_ROOT=s3a://enterprise-ai-data
+```
+
+Spark jobs should be submitted with Hadoop AWS support matching the Hadoop
+version bundled with the Spark distribution. This project currently uses
+Hadoop `3.4.2`:
+
+```bash
+spark-submit \
+	--packages org.apache.hadoop:hadoop-aws:3.4.2 \
+	streaming/spark/silver_transform.py
+```
+
+Use the AWS SDK credential chain, such as an AWS CLI profile locally or an
+IAM role on AWS. Do not put access keys in source code or `.env` files.
+
 ---
 
 ## Core Architecture Principle
