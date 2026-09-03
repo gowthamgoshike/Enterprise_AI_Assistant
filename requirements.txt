@@ -1,3 +1,5 @@
 pydantic
 pytest
 python-dotenv
+kafka-python
+pyspark
