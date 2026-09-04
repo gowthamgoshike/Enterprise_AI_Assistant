@@ -1,3 +1,0 @@
-v1
-{"path":"file:///Users/gowthamgoshike/projects/Enterprise_AI_Assistant/data_lake/bronze/transactions/ingestion_date=2026-09-03/part-00000-6f720b23-05eb-4d77-a869-2f2ac409d61b.c000.snappy.parquet","size":5014,"isDir":false,"modificationTime":1788464808604,"blockReplication":1,"blockSize":33554432,"action":"add"}
-{"path":"file:///Users/gowthamgoshike/projects/Enterprise_AI_Assistant/data_lake/bronze/transactions/ingestion_date=2026-09-03/part-00001-9feef09a-86f8-4181-a0c5-d307db3fd888.c000.snappy.parquet","size":5049,"isDir":false,"modificationTime":1788464808092,"blockReplication":1,"blockSize":33554432,"action":"add"}

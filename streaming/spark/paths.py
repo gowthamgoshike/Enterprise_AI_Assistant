@@ -6,10 +6,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-DATA_ROOT = os.getenv("DATA_ROOT") or "data_lake"
+DATA_ROOT = os.getenv("DATA_ROOT", "data_lake")
 
 BRONZE_TRANSACTIONS = (
     f"{DATA_ROOT}/bronze/transactions"
+)
+
+BRONZE_CHECKPOINT = os.getenv(
+    "BRONZE_CHECKPOINT_LOCATION",
+    f"{DATA_ROOT}/_checkpoints/bronze_transactions",
 )
 
 

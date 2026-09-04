@@ -1,0 +1,4 @@
+v1
+{"path":"file:///Users/gowthamgoshike/projects/Enterprise_AI_Assistant/data_lake/bronze/transactions/ingestion_date=2026-09-03/part-00000-700e76e8-9002-4445-9503-3a21c5917f2f.c000.snappy.parquet","size":12440,"isDir":false,"modificationTime":1788489243245,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///Users/gowthamgoshike/projects/Enterprise_AI_Assistant/data_lake/bronze/transactions/ingestion_date=2026-09-03/part-00001-5d95af9d-dc12-4efa-bbf1-3df570714740.c000.snappy.parquet","size":13602,"isDir":false,"modificationTime":1788489243247,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///Users/gowthamgoshike/projects/Enterprise_AI_Assistant/data_lake/bronze/transactions/ingestion_date=2026-09-03/part-00002-1e49876f-d36d-444b-a500-b88b08849936.c000.snappy.parquet","size":13219,"isDir":false,"modificationTime":1788489243066,"blockReplication":1,"blockSize":33554432,"action":"add"}

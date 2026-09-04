@@ -82,13 +82,23 @@ DATA_ROOT=data_lake
 
 Spark jobs should be submitted with Hadoop AWS support matching the Hadoop
 version bundled with the Spark distribution. This project currently uses
-Hadoop `3.4.2`:
+Hadoop `3.3.4`:
 
 ```bash
-spark-submit \
-	--packages org.apache.hadoop:hadoop-aws:3.4.2 \
+.venv/bin/python -m dotenv run -- spark-submit \
+	--packages org.apache.hadoop:hadoop-aws:3.3.4 \
 	streaming/spark/silver_transform.py
 ```
+
+The `dotenv run --` prefix is required when using `.env` locally because
+`spark-submit` starts the Spark JVM before the Python job imports
+`load_dotenv()`. It makes the AWS variables available to the S3A filesystem.
+
+Bronze checkpoints default to
+`<DATA_ROOT>/_checkpoints/bronze_transactions`, so S3 deployments keep the
+checkpoint beside the data. Run only one Bronze writer for a given output path,
+and do not manually delete the output's `_spark_metadata` directory or its
+checkpoint. Those two locations are the stream's recovery state.
 
 Use the AWS SDK credential chain, such as an AWS CLI profile locally or an
 IAM role on AWS. Do not put access keys in source code or `.env` files.

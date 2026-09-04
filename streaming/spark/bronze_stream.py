@@ -6,7 +6,10 @@ from pyspark.sql.functions import (
     to_date,
 )
 
-from paths import BRONZE_TRANSACTIONS
+from paths import (
+    BRONZE_CHECKPOINT,
+    BRONZE_TRANSACTIONS,
+)
 
 from pyspark.sql.types import (
     StructField,
@@ -173,7 +176,7 @@ bronze_query = (
     )
     .option(
         "checkpointLocation",
-        "checkpoints/bronze_transactions"
+        BRONZE_CHECKPOINT
     )
     .partitionBy(
         "ingestion_date"
