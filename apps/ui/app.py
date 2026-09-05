@@ -182,6 +182,21 @@ if prompt:
                 assistant_response
             )
 
+            tool_used = result.get(
+                "tool_used"
+            )
+
+            if tool_used:
+
+                with st.expander(
+                    "Assistant activity"
+                ):
+
+                    st.write(
+                        "Tool used:",
+                        tool_used,
+                    )
+
             model_name = result.get(
                 "model"
             )

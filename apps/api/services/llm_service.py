@@ -27,20 +27,41 @@ LLM_REQUEST_TIMEOUT_SECONDS = float(
 
 async def chat_with_model(
     messages: list[dict],
+    include_default_system_prompt: bool = True,
+    response_format: str | None = None,
 ) -> str:
 
-    full_messages = [
-        {
-            "role": "system",
-            "content":
-                ENTERPRISE_ASSISTANT_SYSTEM_PROMPT,
-        },
-        *messages,
-    ]
+    if include_default_system_prompt:
+
+        full_messages = [
+            {
+                "role": "system",
+                "content":
+                    ENTERPRISE_ASSISTANT_SYSTEM_PROMPT,
+            },
+            *messages,
+        ]
+
+    else:
+
+        full_messages = messages
 
     timeout = httpx.Timeout(
         LLM_REQUEST_TIMEOUT_SECONDS
     )
+
+    request_payload = {
+        "model": OLLAMA_MODEL,
+        "messages": full_messages,
+        "stream": False,
+        "options": {
+            "temperature": 0.1,
+        },
+    }
+
+    if response_format is not None:
+
+        request_payload["format"] = response_format
 
     async with httpx.AsyncClient(
         timeout=timeout
@@ -48,14 +69,7 @@ async def chat_with_model(
 
         response = await client.post(
             f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": full_messages,
-                "stream": False,
-                "options": {
-                    "temperature": 0.1,
-                },
-            },
+            json=request_payload,
         )
 
         response.raise_for_status()

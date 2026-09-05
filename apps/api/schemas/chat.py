@@ -19,7 +19,13 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+
     request_id: str
+
     response: str
+
     model: str
+
     latency_seconds: float
+
+    tool_used: str | None = None

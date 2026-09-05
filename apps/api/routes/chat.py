@@ -16,8 +16,8 @@ from apps.api.schemas.chat import (
     ChatResponse,
 )
 
-from apps.api.services.chat_service import (
-    generate_chat_response,
+from apps.api.services.agent_service import (
+    process_user_request,
 )
 
 from apps.api.services.llm_service import (
@@ -83,15 +83,11 @@ async def chat(
             request_id,
         )
 
-        messages = [
-            message.model_dump()
-            for message in request.messages
-        ]
-
         start = time.perf_counter()
 
-        response = await generate_chat_response(
-            messages
+        result = await process_user_request(
+            request.messages[-1].content,
+            request_id,
         )
 
         latency = (
@@ -107,12 +103,13 @@ async def chat(
 
         return ChatResponse(
             request_id=request_id,
-            response=response,
+            response=result["response"],
             model=OLLAMA_MODEL,
             latency_seconds=round(
                 latency,
                 3,
             ),
+            tool_used=result.get("tool_used"),
         )
 
     except httpx.TimeoutException as exc:

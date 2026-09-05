@@ -1,5 +1,5 @@
-from apps.api.services.llm_service import (
-    chat_with_model,
+from apps.api.services.agent_service import (
+    generate_agent_response,
 )
 
 
@@ -7,6 +7,6 @@ async def generate_chat_response(
     messages: list[dict],
 ) -> str:
 
-    return await chat_with_model(
+    return await generate_agent_response(
         messages
     )
