@@ -7,9 +7,27 @@ from ai.prompts.tool_prompts import (
     TOOL_SELECTION_PROMPT,
     TOOL_RESULT_PROMPT,
 )
+from ai.exceptions import (
+    AgentDecisionError,
+)
+from ai.schemas.agent import (
+    AgentDecision,
+    AgentResponse,
+    agent_decision_adapter,
+)
+from pydantic import (
+    ValidationError,
+)
 
 from ai.tools.registry import (
     TOOL_REGISTRY,
+)
+from ai.tools.exceptions import (
+    ToolExecutionError,
+)
+from ai.schemas.tools import (
+    ToolError,
+    ToolResult,
 )
 
 from apps.api.services.llm_service import (
@@ -22,9 +40,12 @@ logger = logging.getLogger(
 )
 
 
+MAX_DECISION_ATTEMPTS = 2
+
+
 async def decide_action(
     user_message: str,
-) -> dict:
+) -> AgentDecision:
 
     messages = [
         {
@@ -39,24 +60,47 @@ async def decide_action(
         },
     ]
 
-    response = await chat_with_model(
-        messages,
-        include_default_system_prompt=False,
-        response_format="json",
-    )
+    for attempt in range(
+        MAX_DECISION_ATTEMPTS
+    ):
 
-    try:
-
-        return json.loads(
-            response
+        response = await chat_with_model(
+            messages,
+            include_default_system_prompt=False,
+            response_format="json",
         )
 
-    except json.JSONDecodeError:
+        try:
 
-        return {
-            "action": "respond",
-            "error": "invalid_model_output",
-        }
+            raw_decision = json.loads(
+                response
+            )
+
+            return agent_decision_adapter.validate_python(
+                raw_decision
+            )
+
+        except (
+            json.JSONDecodeError,
+            ValidationError,
+        ) as exc:
+
+            if attempt == MAX_DECISION_ATTEMPTS - 1:
+
+                raise AgentDecisionError(
+                    "Unable to obtain valid agent decision"
+                ) from exc
+
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Your previous output did not "
+                        "match the required JSON schema. "
+                        "Return valid JSON only."
+                    ),
+                }
+            )
 
 
 async def execute_tool(
@@ -91,6 +135,18 @@ async def execute_tool(
             **arguments,
         )
 
+    except ToolExecutionError as exc:
+
+        tool_result = ToolResult(
+            success=False,
+            tool_name=tool_name,
+            error=ToolError(
+                code=exc.code,
+                message=exc.message,
+                retryable=exc.retryable,
+            ),
+        )
+
     finally:
 
         tool_latency = (
@@ -119,14 +175,26 @@ async def execute_tool(
 async def process_user_request(
     user_message: str,
     request_id: str | None = None,
-) -> dict:
+) -> AgentResponse:
 
-    decision = await decide_action(
-        user_message
-    )
+    try:
 
-    if decision.get("action") == "respond":
+        decision = await decide_action(
+            user_message
+        )
 
+    except AgentDecisionError:
+
+        return AgentResponse(
+            response=(
+                "I couldn't reliably determine "
+                "the correct action for that request."
+            ),
+            tool_used=None,
+            success=False,
+        )
+
+    if decision.action == "respond":
         response = await chat_with_model(
             [
                 {
@@ -136,24 +204,21 @@ async def process_user_request(
             ]
         )
 
-        return {
-            "response": response,
-            "tool_used": None,
-        }
-
-    tool_name = decision.get(
-        "tool_name"
-    )
-
-    arguments = decision.get(
-        "arguments",
-        {},
-    )
+        return AgentResponse(
+            response=response,
+            tool_used=None,
+        )
 
     tool_result = await execute_tool(
-        tool_name,
-        arguments,
+        decision.tool_name,
+        decision.arguments.model_dump(),
         request_id,
+    )
+
+    serialized_tool_result = (
+        tool_result.model_dump(mode="json")
+        if hasattr(tool_result, "model_dump")
+        else tool_result
     )
 
     messages = [
@@ -169,7 +234,7 @@ async def process_user_request(
             "role": "user",
             "content": (
                 "Tool result:\n"
-                f"{json.dumps(tool_result, default=str)}"
+                f"{json.dumps(serialized_tool_result)}"
             ),
         },
     ]
@@ -179,11 +244,10 @@ async def process_user_request(
         include_default_system_prompt=False,
     )
 
-    return {
-        "response": response,
-        "tool_used": tool_name,
-        "tool_result": tool_result,
-    }
+    return AgentResponse(
+        response=response,
+        tool_used=decision.tool_name,
+    )
 
 
 async def generate_agent_response(
@@ -199,43 +263,48 @@ async def generate_agent_response(
         "",
     )
 
-    decision = await decide_action(
-        user_message
-    )
+    decision = await decide_action(user_message)
 
-    if decision.get("action") != "tool":
+    if decision.action == "respond":
 
-        return await chat_with_model(
+        response = await chat_with_model(
             messages
         )
 
-    tool_name = decision.get(
-        "tool_name"
-    )
-
-    arguments = decision.get(
-        "arguments",
-        {},
-    )
+        return response
 
     tool_result = await execute_tool(
-        tool_name,
-        arguments,
+        decision.tool_name,
+        decision.arguments.model_dump(),
     )
 
-    tool_context = (
-        "Use the following approved enterprise "
-        "tool result to answer the user's request. "
-        "Do not invent or alter any values.\n\n"
-        f"{json.dumps(tool_result, default=str)}"
+    serialized_tool_result = (
+        tool_result.model_dump(mode="json")
+        if hasattr(tool_result, "model_dump")
+        else tool_result
     )
+
+    messages = [
+        {
+            "role": "system",
+            "content": TOOL_RESULT_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": user_message,
+        },
+        {
+            "role": "user",
+            "content": (
+                "Tool result:\n"
+                f"{json.dumps(serialized_tool_result)}"
+            ),
+        },
+    ]
 
     return await chat_with_model(
-        [
-            *messages,
-            {
-                "role": "system",
-                "content": tool_context,
-            },
-        ]
+        messages,
+        include_default_system_prompt=False,
     )
+
+

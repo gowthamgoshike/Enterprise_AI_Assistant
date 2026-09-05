@@ -29,3 +29,8 @@ class ChatResponse(BaseModel):
     latency_seconds: float
 
     tool_used: str | None = None
+
+    agent_action: Literal[
+        "respond",
+        "tool",
+    ]

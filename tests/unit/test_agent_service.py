@@ -1,12 +1,57 @@
 import asyncio
+import pytest
 
+from ai.exceptions import (
+    AgentDecisionError,
+)
+from ai.tools.exceptions import (
+    ToolExecutionError,
+)
+from ai.schemas.agent import (
+    RespondDecision,
+    TransactionToolDecision,
+)
 from apps.api.services import agent_service
 
 
-def test_invalid_model_json_returns_respond_action(monkeypatch):
+def test_invalid_model_json_retries_then_raises(monkeypatch):
+
+    calls = 0
 
     async def fake_chat_with_model(*args, **kwargs):
+        nonlocal calls
+        calls += 1
         return "not-json"
+
+    monkeypatch.setattr(
+        agent_service,
+        "chat_with_model",
+        fake_chat_with_model,
+    )
+
+    with pytest.raises(AgentDecisionError):
+        asyncio.run(
+            agent_service.decide_action(
+                "What is the status of TX-123?"
+            )
+        )
+
+    assert calls == 2
+
+
+def test_invalid_decision_is_repaired_on_second_attempt(monkeypatch):
+
+    responses = iter(
+        [
+            '{"action":"respond","tool_name":"get_transaction"}',
+            '{"action":"respond"}',
+        ]
+    )
+    captured_messages = []
+
+    async def fake_chat_with_model(messages, **kwargs):
+        captured_messages.append(messages)
+        return next(responses)
 
     monkeypatch.setattr(
         agent_service,
@@ -16,14 +61,13 @@ def test_invalid_model_json_returns_respond_action(monkeypatch):
 
     decision = asyncio.run(
         agent_service.decide_action(
-            "What is the status of TX-123?"
+            "Explain transaction monitoring."
         )
     )
 
-    assert decision == {
-        "action": "respond",
-        "error": "invalid_model_output",
-    }
+    assert decision.action == "respond"
+    assert len(captured_messages) == 2
+    assert "did not match" in captured_messages[1][-1]["content"]
 
 
 def test_unknown_tool_is_rejected():
@@ -105,9 +149,7 @@ def test_tool_execution_logs_request_id_without_result(
 def test_process_user_request_without_tool(monkeypatch):
 
     async def fake_decide_action(user_message):
-        return {
-            "action": "respond",
-        }
+        return RespondDecision(action="respond")
 
     async def fake_chat_with_model(messages, **kwargs):
         assert messages == [
@@ -135,22 +177,50 @@ def test_process_user_request_without_tool(monkeypatch):
         )
     )
 
-    assert result == {
-        "response": "direct response",
-        "tool_used": None,
-    }
+    assert result.response == "direct response"
+    assert result.tool_used is None
+    assert result.success is True
+
+
+def test_process_user_request_falls_back_after_invalid_decisions(
+    monkeypatch,
+):
+
+    async def failing_decide_action(user_message):
+        raise AgentDecisionError(
+            "Unable to obtain valid agent decision"
+        )
+
+    monkeypatch.setattr(
+        agent_service,
+        "decide_action",
+        failing_decide_action,
+    )
+
+    result = asyncio.run(
+        agent_service.process_user_request(
+            "What is the status of TX-123?"
+        )
+    )
+
+    assert result.response == (
+        "I couldn't reliably determine "
+        "the correct action for that request."
+    )
+    assert result.tool_used is None
+    assert result.success is False
 
 
 def test_process_user_request_with_tool(monkeypatch):
 
     async def fake_decide_action(user_message):
-        return {
-            "action": "tool",
-            "tool_name": "test_tool",
-            "arguments": {
+        return TransactionToolDecision(
+            action="tool",
+            tool_name="get_transaction",
+            arguments={
                 "transaction_id": "TX-123",
             },
-        }
+        )
 
     def fake_tool(transaction_id):
         return {
@@ -176,7 +246,7 @@ def test_process_user_request_with_tool(monkeypatch):
     )
     monkeypatch.setitem(
         agent_service.TOOL_REGISTRY,
-        "test_tool",
+        "get_transaction",
         fake_tool,
     )
 
@@ -186,14 +256,9 @@ def test_process_user_request_with_tool(monkeypatch):
         )
     )
 
-    assert result == {
-        "response": "Transaction is completed.",
-        "tool_used": "test_tool",
-        "tool_result": {
-            "transaction_id": "TX-123",
-            "status": "completed",
-        },
-    }
+    assert result.response == "Transaction is completed."
+    assert result.tool_used == "get_transaction"
+    assert result.success is True
 
 
 def test_process_user_request_passes_request_id_to_tool(
@@ -201,13 +266,13 @@ def test_process_user_request_passes_request_id_to_tool(
 ):
 
     async def fake_decide_action(user_message):
-        return {
-            "action": "tool",
-            "tool_name": "get_transaction",
-            "arguments": {
+        return TransactionToolDecision(
+            action="tool",
+            tool_name="get_transaction",
+            arguments={
                 "transaction_id": "TX-123",
             },
-        }
+        )
 
     captured = {}
 
@@ -249,4 +314,34 @@ def test_process_user_request_passes_request_id_to_tool(
     )
 
     assert captured["request_id"] == "request-123"
-    assert result["tool_used"] == "get_transaction"
+    assert result.tool_used == "get_transaction"
+
+
+def test_execute_tool_sanitizes_tool_execution_error(
+    monkeypatch,
+):
+
+    def failing_tool():
+        raise ToolExecutionError(
+            code="DATABASE_UNAVAILABLE",
+            message="The database is unavailable.",
+            retryable=True,
+        )
+
+    monkeypatch.setitem(
+        agent_service.TOOL_REGISTRY,
+        "test_tool",
+        failing_tool,
+    )
+
+    result = asyncio.run(
+        agent_service.execute_tool(
+            "test_tool",
+            {},
+        )
+    )
+
+    assert result.success is False
+    assert result.tool_name == "test_tool"
+    assert result.error.code == "DATABASE_UNAVAILABLE"
+    assert result.error.retryable is True

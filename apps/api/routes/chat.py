@@ -103,13 +103,18 @@ async def chat(
 
         return ChatResponse(
             request_id=request_id,
-            response=result["response"],
+            response=result.response,
             model=OLLAMA_MODEL,
             latency_seconds=round(
                 latency,
                 3,
             ),
-            tool_used=result.get("tool_used"),
+            tool_used=result.tool_used,
+            agent_action=(
+                "tool"
+                if result.tool_used
+                else "respond"
+            ),
         )
 
     except httpx.TimeoutException as exc:
