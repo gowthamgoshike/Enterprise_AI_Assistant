@@ -15,3 +15,7 @@ uvicorn
 httpx
 
 streamlit
+
+langchain
+langchain-core
+langchain-ollama

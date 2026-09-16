@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 import uuid
@@ -16,13 +17,12 @@ from apps.api.schemas.chat import (
     ChatResponse,
 )
 
-from apps.api.services.agent_service import (
-    process_user_request,
+from apps.api.services.langchain_agent_service import (
+    process_with_langchain,
 )
 
 from apps.api.services.llm_service import (
     OLLAMA_MODEL,
-    stream_chat_with_model,
 )
 
 
@@ -51,17 +51,22 @@ async def stream_chat(
     request: ChatRequest,
 ):
 
-    messages = [
-        message.model_dump()
-        for message in request.messages
-    ]
+    result = await chat(request)
 
-    return StreamingResponse(
-        stream_chat_with_model(
-            messages
-        ),
-        media_type="application/x-ndjson",
-    )
+    async def events():
+        yield json.dumps({
+            "model": result.model,
+            "message": {"role": "assistant", "content": result.response},
+            "done": False,
+        }) + "\n"
+        yield json.dumps({
+            "model": result.model,
+            "message": {"role": "assistant", "content": ""},
+            "done": True,
+            "tools_used": result.tools_used,
+        }) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
 
 
 @router.post(
@@ -85,9 +90,10 @@ async def chat(
 
         start = time.perf_counter()
 
-        result = await process_user_request(
+        result = await process_with_langchain(
             request.messages[-1].content,
             request_id,
+            history=[message.model_dump() for message in request.messages],
         )
 
         latency = (
@@ -103,16 +109,16 @@ async def chat(
 
         return ChatResponse(
             request_id=request_id,
-            response=result.response,
+            response=result["response"],
             model=OLLAMA_MODEL,
             latency_seconds=round(
                 latency,
                 3,
             ),
-            tool_used=result.tool_used,
+            tools_used=result["tools_used"],
             agent_action=(
                 "tool"
-                if result.tool_used
+                if result["tools_used"]
                 else "respond"
             ),
         )

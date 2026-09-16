@@ -9,6 +9,12 @@ from pydantic import (
     field_validator,
     TypeAdapter,
 )
+from typing import Literal
+
+from pydantic import (
+    BaseModel,
+    Field,
+)
 
 class GetTransactionArguments(
     BaseModel
@@ -93,3 +99,16 @@ class AgentError(BaseModel):
     retryable: bool = False
 
 
+class RouterDecision(BaseModel):
+
+    action: Literal[
+        "respond",
+        "get_transaction",
+    ]
+
+    transaction_id: (
+        str | None
+    ) = Field(
+        default=None,
+        max_length=100,
+    )

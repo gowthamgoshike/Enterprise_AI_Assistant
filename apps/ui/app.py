@@ -23,6 +23,13 @@ from apps.ui.services.api_client import (
 )
 
 
+def render_activity(tools_used: list[str]) -> None:
+    if tools_used:
+        with st.expander("Assistant activity"):
+            for tool_name in tools_used:
+                st.write(f"Tool: {tool_name}")
+
+
 st.set_page_config(
     page_title=(
         "Enterprise AI Assistant"
@@ -94,10 +101,8 @@ st.caption(
 )
 
 st.info(
-    "The assistant currently has "
-    "general model knowledge only. "
-    "Enterprise database tools will be "
-    "added in later stages."
+    "Ask about specific transactions, top products by revenue, "
+    "aggregate revenue, or transaction counts by status."
 )
 
 
@@ -109,10 +114,10 @@ if not st.session_state.messages:
 
         Try asking:
 
-        - Explain our streaming architecture.
-        - Why do we use Kafka?
-        - What is a Gold data layer?
-        - What is tool calling?
+        - What are our top 5 products?
+        - How is the business doing?
+        - How many transactions have failed?
+        - What is the status of TX-123?
         """
     )
 
@@ -126,6 +131,7 @@ for message in st.session_state.messages:
         st.markdown(
             message["content"]
         )
+        render_activity(message.get("tools_used", []))
 
 
 prompt = st.chat_input(
@@ -156,6 +162,8 @@ if prompt:
         "assistant"
     ):
 
+        tools_used = []
+
         try:
 
             with st.spinner(
@@ -171,7 +179,10 @@ if prompt:
                 )
 
                 result = send_chat(
-                    context_messages
+                    [
+                        {"role": message["role"], "content": message["content"]}
+                        for message in context_messages
+                    ]
                 )
 
             assistant_response = (
@@ -182,20 +193,8 @@ if prompt:
                 assistant_response
             )
 
-            tool_used = result.get(
-                "tool_used"
-            )
-
-            if tool_used:
-
-                with st.expander(
-                    "Assistant activity"
-                ):
-
-                    st.write(
-                        "Tool used:",
-                        tool_used,
-                    )
+            tools_used = result.get("tools_used", [])
+            render_activity(tools_used)
 
             model_name = result.get(
                 "model"
@@ -265,5 +264,6 @@ if prompt:
         {
             "role": "assistant",
             "content": assistant_response,
+            "tools_used": tools_used,
         }
     )

@@ -15,7 +15,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    messages: list[ChatMessage]
+    messages: list[ChatMessage] = Field(min_length=1)
 
 
 class ChatResponse(BaseModel):
@@ -28,7 +28,7 @@ class ChatResponse(BaseModel):
 
     latency_seconds: float
 
-    tool_used: str | None = None
+    tools_used: list[str] = Field(default_factory=list)
 
     agent_action: Literal[
         "respond",

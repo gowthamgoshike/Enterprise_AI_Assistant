@@ -11,7 +11,11 @@ from ai.schemas.tools import (
     TransactionLookupResult,
     ToolResult,
 )
+from langchain_core.tools import tool
 
+from services.transaction_service.service import (
+    find_transaction,
+)
 def get_transaction_tool(
     transaction_id: str,
 ) -> ToolResult:
@@ -50,3 +54,26 @@ def get_transaction_tool(
         data=lookup_result.model_dump(mode="json"),
     )
 
+@tool
+def get_transaction(
+    transaction_id: str,
+) -> dict:
+    """
+    Retrieve the current state of a
+    transaction by transaction ID.
+
+    Use this tool only when the user asks
+    about one specific transaction ID, not aggregate analytics.
+    The transaction_id is required and normalized to uppercase.
+    Returns found and the matching transaction, or no match.
+    """
+
+    normalized_id = (
+        transaction_id
+        .strip()
+        .upper()
+    )
+
+    return find_transaction(
+        normalized_id
+    )
