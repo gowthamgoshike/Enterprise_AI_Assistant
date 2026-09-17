@@ -1,3 +1,5 @@
+from services.transaction_service.identifiers import normalize_transaction_id
+
 from typing import (
     Annotated,
     Literal,
@@ -9,12 +11,15 @@ from pydantic import (
     field_validator,
     TypeAdapter,
 )
-from typing import Literal
 
-from pydantic import (
-    BaseModel,
-    Field,
-)
+
+class IntentRoute(BaseModel):
+    """Classification with an uncalibrated model-generated routing signal."""
+
+    route: Literal["transaction", "analytics", "general"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str = Field(max_length=250)
+
 
 class GetTransactionArguments(
     BaseModel
@@ -34,7 +39,7 @@ class GetTransactionArguments(
         transaction_id: str,
     ) -> str:
 
-        normalized_id = transaction_id.strip().upper()
+        normalized_id = normalize_transaction_id(transaction_id)
 
         if not normalized_id:
 

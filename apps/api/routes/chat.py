@@ -64,6 +64,8 @@ async def stream_chat(
             "message": {"role": "assistant", "content": ""},
             "done": True,
             "tools_used": result.tools_used,
+            "route": result.route,
+            "route_confidence": result.route_confidence,
         }) + "\n"
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
@@ -116,6 +118,8 @@ async def chat(
                 3,
             ),
             tools_used=result["tools_used"],
+            route=result.get("route"),
+            route_confidence=result.get("route_confidence"),
             agent_action=(
                 "tool"
                 if result["tools_used"]

@@ -23,9 +23,17 @@ from apps.ui.services.api_client import (
 )
 
 
-def render_activity(tools_used: list[str]) -> None:
-    if tools_used:
+def render_activity(
+    tools_used: list[str],
+    route: str | None = None,
+    confidence: float | None = None,
+) -> None:
+    if tools_used or route or confidence is not None:
         with st.expander("Assistant activity"):
+            if route:
+                st.write("Route:", route)
+            if confidence is not None:
+                st.write("Routing confidence:", round(confidence, 2))
             for tool_name in tools_used:
                 st.write(f"Tool: {tool_name}")
 
@@ -131,7 +139,11 @@ for message in st.session_state.messages:
         st.markdown(
             message["content"]
         )
-        render_activity(message.get("tools_used", []))
+        render_activity(
+            message.get("tools_used", []),
+            message.get("route"),
+            message.get("route_confidence"),
+        )
 
 
 prompt = st.chat_input(
@@ -163,6 +175,8 @@ if prompt:
     ):
 
         tools_used = []
+        route = None
+        confidence = None
 
         try:
 
@@ -194,7 +208,9 @@ if prompt:
             )
 
             tools_used = result.get("tools_used", [])
-            render_activity(tools_used)
+            route = result.get("route")
+            confidence = result.get("route_confidence")
+            render_activity(tools_used, route, confidence)
 
             model_name = result.get(
                 "model"
@@ -265,5 +281,7 @@ if prompt:
             "role": "assistant",
             "content": assistant_response,
             "tools_used": tools_used,
+            "route": route,
+            "route_confidence": confidence,
         }
     )

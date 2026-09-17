@@ -15,7 +15,7 @@ def test_chat_endpoints_use_analytics_agent(monkeypatch):
 
     async def fake_agent(message, request_id, history):
         calls.append((message, request_id, history))
-        return {"response": "Revenue is 100.", "tools_used": tool_names}
+        return {"response": "Revenue is 100.", "tools_used": tool_names, "route": "analytics", "route_confidence": 0.94}
 
     monkeypatch.setattr(chat_routes, "process_with_langchain", fake_agent)
     monkeypatch.setattr(chat_routes, "OLLAMA_MODEL", "test-model")
@@ -29,12 +29,16 @@ def test_chat_endpoints_use_analytics_agent(monkeypatch):
     assert response.json()["tools_used"] == tool_names
     assert "tool_used" not in response.json()
     assert response.json()["agent_action"] == "tool"
+    assert response.json()["route"] == "analytics"
+    assert response.json()["route_confidence"] == 0.94
 
     response = client.post("/api/v1/chat/stream", json={"messages": messages})
     assert response.status_code == 200
     events = [json.loads(line) for line in response.text.splitlines()]
     assert events[0]["message"]["content"] == "Revenue is 100."
     assert events[-1]["done"] is True
+    assert events[-1]["route"] == "analytics"
+    assert events[-1]["route_confidence"] == 0.94
     assert events[-1]["tools_used"] == tool_names
     assert len(calls) == 2
     assert all(call[0] == messages[-1]["content"] for call in calls)

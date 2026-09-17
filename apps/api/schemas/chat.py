@@ -30,6 +30,10 @@ class ChatResponse(BaseModel):
 
     tools_used: list[str] = Field(default_factory=list)
 
+    route: str | None = None
+
+    route_confidence: float | None = None
+
     agent_action: Literal[
         "respond",
         "tool",

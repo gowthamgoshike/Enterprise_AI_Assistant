@@ -119,3 +119,21 @@ def test_get_transaction_not_found_is_successful_business_result(
         "found": False,
         "transaction": None,
     }
+
+@pytest.mark.parametrize('uppercase', [False, True])
+def test_uuid_transaction_lookup_preserves_stored_id(monkeypatch, uppercase):
+    from ai.schemas.agent import GetTransactionArguments
+
+    stored_id = 'TX-00b9e33e-b177-497d-8a01-ed103547c62f'
+    supplied_id = f'  {stored_id.upper() if uppercase else stored_id}  '
+    seen = []
+
+    def lookup(transaction_id):
+        seen.append(transaction_id)
+        return {'found': False, 'transaction': None}
+
+    monkeypatch.setattr(transaction_tools, 'find_transaction', lookup)
+    arguments = GetTransactionArguments(transaction_id=supplied_id)
+    transaction_tools.get_transaction_tool(arguments.transaction_id)
+    transaction_tools.get_transaction.invoke({'transaction_id': supplied_id})
+    assert seen == [stored_id, stored_id]
