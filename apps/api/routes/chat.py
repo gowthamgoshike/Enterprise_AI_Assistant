@@ -17,8 +17,8 @@ from apps.api.schemas.chat import (
     ChatResponse,
 )
 
-from apps.api.services.langchain_agent_service import (
-    process_with_langchain,
+from ai.graphs.enterprise_graph import (
+    run_enterprise_graph,
 )
 
 from apps.api.services.llm_service import (
@@ -92,10 +92,9 @@ async def chat(
 
         start = time.perf_counter()
 
-        result = await process_with_langchain(
-            request.messages[-1].content,
-            request_id,
-            history=[message.model_dump() for message in request.messages],
+        result = await run_enterprise_graph(
+            user_message=request.messages[-1].content,
+            request_id=request_id,
         )
 
         latency = (
@@ -117,12 +116,12 @@ async def chat(
                 latency,
                 3,
             ),
-            tools_used=result["tools_used"],
+            tools_used=result.get("tools_used", []),
             route=result.get("route"),
             route_confidence=result.get("route_confidence"),
             agent_action=(
                 "tool"
-                if result["tools_used"]
+                if result.get("tools_used", [])
                 else "respond"
             ),
         )
