@@ -8,6 +8,7 @@ from fastapi import (
     HTTPException,
 )
 import httpx
+from langgraph.errors import GraphRecursionError
 from fastapi.responses import (
     StreamingResponse,
 )
@@ -17,8 +18,9 @@ from apps.api.schemas.chat import (
     ChatResponse,
 )
 
-from ai.graphs.enterprise_graph import (
-    run_enterprise_graph,
+from ai.graphs.tool_agent_graph import (
+    extract_tools_used,
+    run_agent_graph,
 )
 
 from apps.api.services.llm_service import (
@@ -92,7 +94,7 @@ async def chat(
 
         start = time.perf_counter()
 
-        result = await run_enterprise_graph(
+        result = await run_agent_graph(
             user_message=request.messages[-1].content,
             request_id=request_id,
         )
@@ -108,23 +110,34 @@ async def chat(
             latency,
         )
 
+        messages = result["messages"]
+        response_text = messages[-1].text
+        tools_used = extract_tools_used(messages)
+
         return ChatResponse(
             request_id=request_id,
-            response=result["response"],
+            response=response_text,
             model=OLLAMA_MODEL,
             latency_seconds=round(
                 latency,
                 3,
             ),
-            tools_used=result.get("tools_used", []),
+            tools_used=tools_used,
             route=result.get("route"),
             route_confidence=result.get("route_confidence"),
             agent_action=(
                 "tool"
-                if result.get("tools_used", [])
+                if tools_used
                 else "respond"
             ),
         )
+
+    except GraphRecursionError as exc:
+        logger.warning("request_id=%s error=agent_step_limit", request_id)
+        raise HTTPException(
+            status_code=503,
+            detail="The assistant reached its execution limit. Please narrow your request.",
+        ) from exc
 
     except httpx.TimeoutException as exc:
 
