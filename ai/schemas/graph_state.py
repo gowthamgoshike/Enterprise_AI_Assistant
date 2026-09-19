@@ -16,5 +16,5 @@ class EnterpriseState(TypedDict):
 class EnterpriseAgentState(MessagesState):
     request_id: str
     route: str | None
-    tools_used: list[str]
+    current_turn_tools: list[str]
     error: str | None

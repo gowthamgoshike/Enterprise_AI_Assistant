@@ -29,12 +29,14 @@ def get_model_health() -> dict:
 
 def send_chat(
     messages: list[dict],
+    session_id: str,
 ) -> dict:
 
     response = requests.post(
         f"{API_BASE_URL}/api/v1/chat",
         json={
             "messages": messages,
+            "session_id": session_id,
         },
         timeout=180,
     )
@@ -46,6 +48,7 @@ def send_chat(
 
 def stream_chat(
     messages: list[dict],
+    session_id: str,
 ):
 
     with requests.post(
@@ -55,6 +58,7 @@ def stream_chat(
         ),
         json={
             "messages": messages,
+            "session_id": session_id,
         },
         stream=True,
         timeout=180,

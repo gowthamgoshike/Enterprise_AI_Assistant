@@ -83,6 +83,9 @@ if st.sidebar.button(
 ):
 
     st.session_state.messages = []
+    st.session_state.session_id = str(
+        uuid.uuid4()
+    )
 
     st.rerun()
 
@@ -193,10 +196,11 @@ if prompt:
                 )
 
                 result = send_chat(
-                    [
+                    messages=[
                         {"role": message["role"], "content": message["content"]}
                         for message in context_messages
-                    ]
+                    ],
+                    session_id=st.session_state.session_id,
                 )
 
             assistant_response = (

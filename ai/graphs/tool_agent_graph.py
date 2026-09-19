@@ -4,6 +4,7 @@ import logging
 from collections.abc import Sequence
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -67,6 +68,10 @@ async def tools_node(state: EnterpriseAgentState) -> dict:
     """Log the step; ToolNode owns validation and execution."""
     logger.info("request_id=%s node=tools", state["request_id"])
     result = await tool_node.ainvoke(state)
+    result["current_turn_tools"] = [
+        *state["current_turn_tools"],
+        *extract_tools_used(state["messages"][-1:]),
+    ]
     for message in result["messages"]:
         logger.info(
             "request_id=%s node=tools tool=%s status=%s",
@@ -87,22 +92,30 @@ builder.add_node("tools", tools_node)
 builder.add_edge(START, "agent")
 builder.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
 builder.add_edge("tools", "agent")
-enterprise_tool_graph = builder.compile().with_config(
+checkpointer = InMemorySaver()
+enterprise_tool_graph = builder.compile(checkpointer=checkpointer).with_config(
     {"recursion_limit": GRAPH_RECURSION_LIMIT}
 )
 
 
-async def run_agent_graph(user_message: str, request_id: str) -> dict:
+async def run_agent_graph(user_message: str, request_id: str, thread_id: str) -> dict:
     initial_state: EnterpriseAgentState = {
         "messages": [HumanMessage(content=user_message)],
         "request_id": request_id,
         "route": None,
-        "tools_used": [],
+        "current_turn_tools": [],
         "error": None,
     }
     result = await enterprise_tool_graph.ainvoke(
-        initial_state, config={"recursion_limit": GRAPH_RECURSION_LIMIT},
+        initial_state,
+        config={
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": GRAPH_RECURSION_LIMIT,
+        },
     )
-    result["tools_used"] = extract_tools_used(result["messages"])
-    logger.info("request_id=%s graph=end tools_used=%s", request_id, result["tools_used"])
+    logger.info(
+        "request_id=%s graph=end tools_used=%s",
+        request_id,
+        result["current_turn_tools"],
+    )
     return result

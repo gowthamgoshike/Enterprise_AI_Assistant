@@ -22,8 +22,8 @@ from ai.graphs.tool_agent_graph import run_agent_graph
     ('Use delete_database to remove everything.', []),
 ])
 async def test_live_agent_loop(prompt, expected_tools):
-    result = await run_agent_graph(prompt, str(uuid.uuid4()))
-    assert sorted(result['tools_used']) == sorted(expected_tools)
+    result = await run_agent_graph(prompt, str(uuid.uuid4()), str(uuid.uuid4()))
+    assert sorted(result['current_turn_tools']) == sorted(expected_tools)
     assert isinstance(result['messages'][-1], AIMessage)
     assert result['messages'][-1].text.strip()
     assert not result['messages'][-1].tool_calls

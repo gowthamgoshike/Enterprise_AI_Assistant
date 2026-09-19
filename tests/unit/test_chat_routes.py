@@ -14,15 +14,15 @@ def test_chat_endpoints_use_graph(monkeypatch):
     calls = []
     tool_names = ["get_revenue_summary", "get_transaction_metrics", "get_top_products"]
 
-    async def fake_graph(*, user_message, request_id):
-        calls.append((user_message, request_id))
+    async def fake_graph(*, user_message, request_id, thread_id):
+        calls.append((user_message, request_id, thread_id))
         return {"messages": [
             AIMessage(content="", tool_calls=[
                 {"name": name, "args": {}, "id": f"call-{i}"}
                 for i, name in enumerate(tool_names)
             ]),
             AIMessage(content="Revenue is 100."),
-        ], "route": None}
+        ], "route": None, "current_turn_tools": tool_names}
 
     monkeypatch.setattr(chat_routes, "run_agent_graph", fake_graph)
     monkeypatch.setattr(chat_routes, "OLLAMA_MODEL", "test-model")
@@ -31,7 +31,10 @@ def test_chat_endpoints_use_graph(monkeypatch):
         {"role": "assistant", "content": "Revenue is 100."},
         {"role": "user", "content": "How is the business doing?"},
     ]
-    response = client.post("/api/v1/chat", json={"messages": messages})
+    response = client.post(
+        "/api/v1/chat",
+        json={"messages": messages, "session_id": "conversation-123"},
+    )
     assert response.status_code == 200
     assert response.json()["request_id"] == calls[0][1]
     assert response.json()["response"] == "Revenue is 100."
@@ -43,7 +46,10 @@ def test_chat_endpoints_use_graph(monkeypatch):
     assert response.json()["route"] is None
     assert response.json()["route_confidence"] is None
 
-    response = client.post("/api/v1/chat/stream", json={"messages": messages})
+    response = client.post(
+        "/api/v1/chat/stream",
+        json={"messages": messages, "session_id": "conversation-123"},
+    )
     assert response.status_code == 200
     events = [json.loads(line) for line in response.text.splitlines()]
     assert events[0]["message"]["content"] == "Revenue is 100."
@@ -54,11 +60,15 @@ def test_chat_endpoints_use_graph(monkeypatch):
     assert len(calls) == 2
     assert all(call[0] == messages[-1]["content"] for call in calls)
     assert all(call[1] for call in calls)
+    assert all(call[2] == "conversation-123" for call in calls)
 
 
 def test_empty_chat_history_is_rejected():
     for endpoint in ("/api/v1/chat", "/api/v1/chat/stream"):
-        assert client.post(endpoint, json={"messages": []}).status_code == 422
+        assert client.post(
+            endpoint,
+            json={"messages": [], "session_id": "conversation-123"},
+        ).status_code == 422
 
 
 def test_chat_general_answer_uses_agent_loop(monkeypatch):
@@ -71,7 +81,7 @@ def test_chat_general_answer_uses_agent_loop(monkeypatch):
     for endpoint in ["/api/v1/chat", "/api/v1/chat/stream"]:
         response = client.post(endpoint, json={"messages": [
             {"role": "user", "content": "Show me what's going on."}
-        ]})
+        ], "session_id": f"general-{endpoint}"})
         assert response.status_code == 200
         if endpoint.endswith("/stream"):
             result = json.loads(response.text.splitlines()[-1])
@@ -94,7 +104,7 @@ def test_chat_step_limit_returns_safe_error(monkeypatch):
     for endpoint in ["/api/v1/chat", "/api/v1/chat/stream"]:
         response = client.post(endpoint, json={"messages": [
             {"role": "user", "content": "Repeat forever"}
-        ]})
+        ], "session_id": "conversation-limit"})
         assert response.status_code == 503
         assert "execution limit" in response.json()["detail"]
         assert "internal details" not in response.text

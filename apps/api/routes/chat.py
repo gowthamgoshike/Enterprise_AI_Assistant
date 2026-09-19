@@ -19,7 +19,6 @@ from apps.api.schemas.chat import (
 )
 
 from ai.graphs.tool_agent_graph import (
-    extract_tools_used,
     run_agent_graph,
 )
 
@@ -97,6 +96,7 @@ async def chat(
         result = await run_agent_graph(
             user_message=request.messages[-1].content,
             request_id=request_id,
+            thread_id=request.session_id,
         )
 
         latency = (
@@ -112,7 +112,7 @@ async def chat(
 
         messages = result["messages"]
         response_text = messages[-1].text
-        tools_used = extract_tools_used(messages)
+        tools_used = result["current_turn_tools"]
 
         return ChatResponse(
             request_id=request_id,

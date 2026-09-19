@@ -14,11 +14,15 @@ async def main(user_message: str):
         'messages': [HumanMessage(content=user_message)],
         'request_id': str(uuid.uuid4()),
         'route': None,
-        'tools_used': [],
+        'current_turn_tools': [],
         'error': None,
     }
     messages = []
-    async for event in enterprise_tool_graph.astream(initial_state, stream_mode='updates'):
+    async for event in enterprise_tool_graph.astream(
+        initial_state,
+        config={"configurable": {"thread_id": "example-thread"}},
+        stream_mode='updates',
+    ):
         for node, update in event.items():
             print(f'node={node}')
             for message in update.get('messages', []):
