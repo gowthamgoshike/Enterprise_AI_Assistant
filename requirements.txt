@@ -21,4 +21,5 @@ langchain
 langchain-core
 langchain-ollama
 langgraph
-
+langgraph-checkpoint-postgres
+psycopg[binary]

@@ -156,7 +156,7 @@ def test_same_thread_restores_history_without_repeating_prior_tools(
     assert len(list(graph.enterprise_tool_graph.get_state_history(config))) > 1
 
 
-def test_client_history_restores_empty_checkpoint_without_later_duplication(monkeypatch):
+def test_checkpoint_restores_history_without_duplication(monkeypatch):
     model = AsyncMock()
     model.ainvoke.side_effect = lambda *_args, **_kwargs: AIMessage(
         content='TX-123 was the transaction.'
@@ -169,11 +169,14 @@ def test_client_history_restores_empty_checkpoint_without_later_duplication(monk
     ]
 
     async def run_conversation():
+        await graph.enterprise_tool_graph.aupdate_state(
+            {'configurable': {'thread_id': thread_id}}, {'messages': history},
+        )
         first = await graph.run_agent_graph(
-            'Which transaction?', 'REQ-restore-1', thread_id, history=history,
+            'Which transaction?', 'REQ-restore-1', thread_id,
         )
         second = await graph.run_agent_graph(
-            'And again?', 'REQ-restore-2', thread_id, history=history,
+            'And again?', 'REQ-restore-2', thread_id,
         )
         return first, second
 

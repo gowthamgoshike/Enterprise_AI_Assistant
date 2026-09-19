@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, HumanMessage
@@ -10,12 +11,33 @@ from apps.api.routes import chat as chat_routes
 client = TestClient(app)
 
 
+def test_graph_failure_logs_metadata_and_returns_safe_error(monkeypatch, caplog):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(chat_routes, "run_agent_graph", AsyncMock(
+        side_effect=RuntimeError("checkpoint failure"),
+    ))
+    with caplog.at_level(logging.INFO, logger=chat_routes.__name__):
+        response = client.post("/api/v1/chat", json={
+            "messages": [{"role": "user", "content": "sensitive question"}],
+            "session_id": "logging-test",
+        })
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Agent execution failed."}
+    record = next(r for r in caplog.records if r.msg.startswith("agent_request"))
+    assert record.thread_id == "logging-test"
+    assert record.message_length == len("sensitive question")
+    assert record.request_id
+    assert "sensitive question" not in caplog.text
+    assert any(r.exc_info for r in caplog.records)
+
+
 def test_chat_endpoints_use_graph(monkeypatch):
     calls = []
     tool_names = ["get_revenue_summary", "get_transaction_metrics", "get_top_products"]
 
-    async def fake_graph(*, user_message, request_id, thread_id, history):
-        calls.append((user_message, request_id, thread_id, history))
+    async def fake_graph(*, user_message, request_id, thread_id, graph):
+        calls.append((user_message, request_id, thread_id, graph))
         return {"messages": [
             AIMessage(content="", tool_calls=[
                 {"name": name, "args": {}, "id": f"call-{i}"}
@@ -61,15 +83,7 @@ def test_chat_endpoints_use_graph(monkeypatch):
     assert all(call[0] == messages[-1]["content"] for call in calls)
     assert all(call[1] for call in calls)
     assert all(call[2] == "conversation-123" for call in calls)
-    assert all(
-        [type(message) for message in call[3]] == [HumanMessage, AIMessage]
-        for call in calls
-    )
-    assert all(
-        [message.content for message in call[3]]
-        == ["Show revenue.", "Revenue is 100."]
-        for call in calls
-    )
+    assert all(call[3] is app.state.enterprise_graph for call in calls)
 
 
 def test_empty_chat_history_is_rejected():

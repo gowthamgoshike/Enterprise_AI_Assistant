@@ -6,10 +6,12 @@ import uuid
 
 from langchain_core.messages import HumanMessage
 
-from ai.graphs.tool_agent_graph import enterprise_tool_graph, extract_tools_used
+from langgraph.checkpoint.memory import InMemorySaver
+from ai.graphs.tool_agent_graph import build_enterprise_tool_graph, extract_tools_used
 
 
 async def main(user_message: str):
+    enterprise_tool_graph = build_enterprise_tool_graph(InMemorySaver())
     initial_state = {
         'messages': [HumanMessage(content=user_message)],
         'request_id': str(uuid.uuid4()),

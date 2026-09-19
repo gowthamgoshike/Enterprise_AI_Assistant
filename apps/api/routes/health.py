@@ -1,4 +1,7 @@
-from fastapi import APIRouter
+import asyncio
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 import os
 
@@ -53,3 +56,20 @@ async def model_health():
             "status": "unavailable",
             "model_service": "ollama",
         }
+
+
+@router.get("/checkpoint")
+async def checkpoint_health(request: Request):
+    """Probe checkpoint storage without returning conversation data or errors."""
+    try:
+        saver = request.app.state.checkpoint_store
+        await asyncio.wait_for(
+            saver.aget_tuple({"configurable": {"thread_id": "__health_probe__"}}),
+            timeout=5.0,
+        )
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={"api": "healthy", "checkpoint_store": "unavailable"},
+        )
+    return {"api": "healthy", "checkpoint_store": "healthy"}

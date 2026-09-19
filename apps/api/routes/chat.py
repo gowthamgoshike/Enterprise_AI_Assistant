@@ -6,9 +6,9 @@ import uuid
 from fastapi import (
     APIRouter,
     HTTPException,
+    Request,
 )
 import httpx
-from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.errors import GraphRecursionError
 from fastapi.responses import (
     StreamingResponse,
@@ -50,10 +50,11 @@ async def model_info():
 
 @router.post("/stream")
 async def stream_chat(
-    request: ChatRequest,
+    payload: ChatRequest,
+    request: Request,
 ):
 
-    result = await chat(request)
+    result = await chat(payload, request)
 
     async def events():
         yield json.dumps({
@@ -78,7 +79,8 @@ async def stream_chat(
     response_model=ChatResponse,
 )
 async def chat(
-    request: ChatRequest,
+    payload: ChatRequest,
+    request: Request,
 ):
 
     try:
@@ -88,26 +90,24 @@ async def chat(
         )
 
         logger.info(
-            "request_id=%s chat_started",
+            "agent_request request_id=%s thread_id=%s message_length=%d",
             request_id,
+            payload.session_id,
+            len(payload.messages[-1].content),
+            extra={
+                "request_id": request_id,
+                "thread_id": payload.session_id,
+                "message_length": len(payload.messages[-1].content),
+            },
         )
 
         start = time.perf_counter()
 
-        history = [
-            (
-                HumanMessage(content=message.content)
-                if message.role == "user"
-                else AIMessage(content=message.content)
-            )
-            for message in request.messages[:-1]
-        ]
-
         result = await run_agent_graph(
-            user_message=request.messages[-1].content,
+            user_message=payload.messages[-1].content,
             request_id=request_id,
-            thread_id=request.session_id,
-            history=history,
+            thread_id=payload.session_id,
+            graph=request.app.state.enterprise_graph,
         )
 
         latency = (
@@ -165,8 +165,11 @@ async def chat(
         ) from exc
 
     except Exception as exc:
-
+        logger.exception(
+            "Agent graph execution failed request_id=%s", request_id,
+            extra={"request_id": request_id},
+        )
         raise HTTPException(
             status_code=500,
-            detail="Unexpected server error",
+            detail="Agent execution failed.",
         ) from exc

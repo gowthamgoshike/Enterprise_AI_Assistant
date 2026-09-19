@@ -12,7 +12,6 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
@@ -337,53 +336,42 @@ def select_entry_node(state: EnterpriseAgentState) -> str:
     return "summarize" if should_summarize(state) else "agent"
 
 
-builder = StateGraph(EnterpriseAgentState)
-builder.add_node("agent", agent_node)
-builder.add_node("summarize", summarize_node)
-builder.add_node("tools", tools_node)
-builder.add_conditional_edges(
-    START,
-    select_entry_node,
-    {"summarize": "summarize", "agent": "agent"},
-)
-builder.add_edge("summarize", "agent")
-builder.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
-builder.add_edge("tools", "agent")
-checkpointer = InMemorySaver()
-enterprise_tool_graph = builder.compile(checkpointer=checkpointer).with_config(
-    {"recursion_limit": GRAPH_RECURSION_LIMIT}
-)
+def build_enterprise_tool_graph(checkpointer):
+    """Build the agent using persistence owned by the caller."""
+    builder = StateGraph(EnterpriseAgentState)
+    builder.add_node("agent", agent_node)
+    builder.add_node("summarize", summarize_node)
+    builder.add_node("tools", tools_node)
+    builder.add_conditional_edges(
+        START, select_entry_node, {"summarize": "summarize", "agent": "agent"},
+    )
+    builder.add_edge("summarize", "agent")
+    builder.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
+    builder.add_edge("tools", "agent")
+    return builder.compile(checkpointer=checkpointer).with_config(
+        {"recursion_limit": GRAPH_RECURSION_LIMIT}
+    )
 
 
 async def run_agent_graph(
     user_message: str,
     request_id: str,
     thread_id: str,
-    history: Sequence[BaseMessage] | None = None,
+    *,
+    graph,
 ) -> dict:
     config = {
         "configurable": {"thread_id": thread_id},
         "recursion_limit": GRAPH_RECURSION_LIMIT,
     }
-    snapshot = enterprise_tool_graph.get_state(config)
-    checkpoint_messages = snapshot.values.get("messages", [])
-    initial_messages = [HumanMessage(content=user_message)]
-    if not checkpoint_messages and history:
-        initial_messages = [*history, *initial_messages]
-        logger.info(
-            "request_id=%s restored_history_messages=%d",
-            request_id,
-            len(history),
-        )
-
     initial_state: EnterpriseAgentState = {
-        "messages": initial_messages,
+        "messages": [HumanMessage(content=user_message)],
         "request_id": request_id,
         "route": None,
         "current_turn_tools": [],
         "error": None,
     }
-    result = await enterprise_tool_graph.ainvoke(
+    result = await graph.ainvoke(
         initial_state,
         config=config,
     )
