@@ -8,6 +8,7 @@ from fastapi import (
     HTTPException,
 )
 import httpx
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.errors import GraphRecursionError
 from fastapi.responses import (
     StreamingResponse,
@@ -93,10 +94,20 @@ async def chat(
 
         start = time.perf_counter()
 
+        history = [
+            (
+                HumanMessage(content=message.content)
+                if message.role == "user"
+                else AIMessage(content=message.content)
+            )
+            for message in request.messages[:-1]
+        ]
+
         result = await run_agent_graph(
             user_message=request.messages[-1].content,
             request_id=request_id,
             thread_id=request.session_id,
+            history=history,
         )
 
         latency = (

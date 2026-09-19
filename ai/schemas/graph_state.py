@@ -17,4 +17,6 @@ class EnterpriseAgentState(MessagesState):
     request_id: str
     route: str | None
     current_turn_tools: list[str]
+    conversation_summary: str | None
+    summarized_message_count: int
     error: str | None

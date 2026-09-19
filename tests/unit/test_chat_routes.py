@@ -1,7 +1,7 @@
 import json
 
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from apps.api.main import app
 from apps.api.routes import chat as chat_routes
@@ -14,8 +14,8 @@ def test_chat_endpoints_use_graph(monkeypatch):
     calls = []
     tool_names = ["get_revenue_summary", "get_transaction_metrics", "get_top_products"]
 
-    async def fake_graph(*, user_message, request_id, thread_id):
-        calls.append((user_message, request_id, thread_id))
+    async def fake_graph(*, user_message, request_id, thread_id, history):
+        calls.append((user_message, request_id, thread_id, history))
         return {"messages": [
             AIMessage(content="", tool_calls=[
                 {"name": name, "args": {}, "id": f"call-{i}"}
@@ -61,6 +61,15 @@ def test_chat_endpoints_use_graph(monkeypatch):
     assert all(call[0] == messages[-1]["content"] for call in calls)
     assert all(call[1] for call in calls)
     assert all(call[2] == "conversation-123" for call in calls)
+    assert all(
+        [type(message) for message in call[3]] == [HumanMessage, AIMessage]
+        for call in calls
+    )
+    assert all(
+        [message.content for message in call[3]]
+        == ["Show revenue.", "Revenue is 100."]
+        for call in calls
+    )
 
 
 def test_empty_chat_history_is_rejected():

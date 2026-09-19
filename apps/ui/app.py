@@ -187,7 +187,7 @@ if prompt:
                 "Thinking..."
             ):
 
-                MAX_CONTEXT_MESSAGES = 20
+                MAX_CONTEXT_MESSAGES = 50
 
                 context_messages = (
                     st.session_state.messages[

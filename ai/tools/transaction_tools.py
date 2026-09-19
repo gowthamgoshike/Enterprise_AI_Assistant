@@ -1,8 +1,4 @@
 from services.transaction_service.identifiers import normalize_transaction_id
-
-from services.transaction_service.service import (
-    find_transaction,
-)
 from sqlalchemy.exc import (
     SQLAlchemyError,
 )
@@ -15,9 +11,7 @@ from ai.schemas.tools import (
 )
 from langchain_core.tools import tool
 
-from services.transaction_service.service import (
-    find_transaction,
-)
+from services.transaction_service.service import find_transaction
 def get_transaction_tool(
     transaction_id: str,
 ) -> ToolResult:
@@ -74,6 +68,9 @@ def get_transaction(
         normalize_transaction_id(transaction_id)
     )
 
-    return find_transaction(
+    raw_result = find_transaction(
         normalized_id
     )
+    return TransactionLookupResult.model_validate(
+        raw_result
+    ).model_dump(mode="json")

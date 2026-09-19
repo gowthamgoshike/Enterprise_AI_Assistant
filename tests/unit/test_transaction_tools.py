@@ -1,4 +1,6 @@
 import pytest
+import json
+from datetime import datetime, timezone
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -119,6 +121,34 @@ def test_get_transaction_not_found_is_successful_business_result(
         "found": False,
         "transaction": None,
     }
+
+
+def test_langchain_transaction_tool_returns_json_serializable_data(monkeypatch):
+    monkeypatch.setattr(
+        transaction_tools,
+        "find_transaction",
+        lambda transaction_id: {
+            "found": True,
+            "transaction": {
+                "transaction_id": transaction_id,
+                "customer_id": "C-1",
+                "product_id": "P-1",
+                "amount_cents": 100,
+                "currency": "USD",
+                "status": "failed",
+                "transaction_type": "purchase",
+                "source": "web",
+                "event_time": datetime(2026, 9, 3, tzinfo=timezone.utc),
+            },
+        },
+    )
+
+    result = transaction_tools.get_transaction.invoke({
+        "transaction_id": "TX-123",
+    })
+
+    assert result["transaction"]["event_time"] == "2026-09-03T00:00:00Z"
+    assert json.loads(json.dumps(result))["transaction"]["status"] == "failed"
 
 @pytest.mark.parametrize('uppercase', [False, True])
 def test_uuid_transaction_lookup_preserves_stored_id(monkeypatch, uppercase):
