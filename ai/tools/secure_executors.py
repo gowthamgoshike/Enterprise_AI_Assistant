@@ -15,6 +15,7 @@ from services.transaction_service.service import (
     find_customer_transaction,
     find_transaction,
 )
+from services.transaction_service.refund_service import prepare_refund_proposal
 
 
 def execute_get_my_transactions(
@@ -102,3 +103,20 @@ def execute_get_transaction_metrics(
         Permission.READ_ANALYTICS,
     )
     return fetch_transaction_metrics()
+
+
+def execute_propose_refund(
+    context: ToolExecutionContext,
+    transaction_id: str,
+    reason: str,
+) -> dict:
+    require_permission(
+        context.role,
+        Permission.PROPOSE_REFUND,
+    )
+    proposal = prepare_refund_proposal(
+        transaction_id=transaction_id,
+        reason=reason,
+        requested_by=context.user_id,
+    )
+    return proposal.model_dump(mode="json")

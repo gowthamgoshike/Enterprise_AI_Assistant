@@ -93,6 +93,26 @@ def send_chat(
     return response.json()
 
 
+def submit_approval(
+    session_id: str,
+    approved: bool,
+    comment: str | None,
+    access_token: str,
+) -> dict:
+    response = requests.post(
+        f"{API_BASE_URL}/api/v1/chat/approval",
+        json={
+            "session_id": session_id,
+            "approved": approved,
+            "comment": comment,
+        },
+        headers=_authorization_headers(access_token),
+        timeout=120,
+    )
+    _raise_for_authenticated_request(response)
+    return response.json()
+
+
 def stream_chat(
     messages: list[dict],
     session_id: str,

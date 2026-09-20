@@ -25,11 +25,30 @@ class ChatRequest(BaseModel):
     )
 
 
+class ApprovalRequest(BaseModel):
+    session_id: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    approved: bool
+    comment: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
+
+
 class ChatResponse(BaseModel):
 
     request_id: str
 
-    response: str
+    response: str | None = None
+
+    status: Literal[
+        "completed",
+        "approval_required",
+    ] = "completed"
+
+    approval_request: dict | None = None
 
     model: str
 
@@ -44,4 +63,5 @@ class ChatResponse(BaseModel):
     agent_action: Literal[
         "respond",
         "tool",
+        "approval",
     ]

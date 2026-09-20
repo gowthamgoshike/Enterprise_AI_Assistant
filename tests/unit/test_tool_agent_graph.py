@@ -378,12 +378,12 @@ def test_loop_is_bounded(monkeypatch, fake_tools):
     assert len(fake_tools) <= 4
 
 
-def test_only_approved_read_tools_registered():
+def test_only_approved_tools_registered():
     from ai.tools.secure_registry import SECURE_TOOL_REGISTRY
 
     assert set(SECURE_TOOL_REGISTRY) == {
         'get_my_transactions', 'get_transaction', 'get_top_products',
-        'get_revenue_summary', 'get_transaction_metrics',
+        'get_revenue_summary', 'get_transaction_metrics', 'propose_refund',
     }
 
 

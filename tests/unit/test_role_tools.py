@@ -24,3 +24,9 @@ def test_analyst_sees_transaction_and_analytics_tools():
         "get_revenue_summary",
         "get_transaction_metrics",
     }
+
+
+def test_only_admin_sees_refund_proposal_tool():
+    assert "propose_refund" in tool_names(UserRole.ADMIN)
+    assert "propose_refund" not in tool_names(UserRole.ANALYST)
+    assert "propose_refund" not in tool_names(UserRole.CUSTOMER)

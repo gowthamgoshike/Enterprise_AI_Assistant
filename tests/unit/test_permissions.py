@@ -40,8 +40,15 @@ def test_admin_has_analytics_revenue_and_admin_permissions():
         Permission.READ_TRANSACTION,
         Permission.READ_ANALYTICS,
         Permission.READ_REVENUE,
+        Permission.PROPOSE_REFUND,
         Permission.ADMIN_ACCESS,
     }
+
+
+def test_only_admin_can_propose_refunds():
+    assert has_permission(UserRole.ADMIN, Permission.PROPOSE_REFUND)
+    assert not has_permission(UserRole.ANALYST, Permission.PROPOSE_REFUND)
+    assert not has_permission(UserRole.CUSTOMER, Permission.PROPOSE_REFUND)
 
 
 def test_analyst_can_read_revenue():

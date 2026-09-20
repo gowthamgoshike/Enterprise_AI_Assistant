@@ -7,6 +7,7 @@ from ai.tools.secure_executors import (
     execute_get_top_products,
     execute_get_transaction,
     execute_get_transaction_metrics,
+    execute_propose_refund,
 )
 from services.auth_service.permissions import Permission
 
@@ -16,6 +17,7 @@ class ToolDefinition:
     name: str
     function: Callable
     permission: Permission | None
+    requires_approval: bool = False
 
 
 SECURE_TOOL_REGISTRY = {
@@ -45,5 +47,11 @@ SECURE_TOOL_REGISTRY = {
         name="get_transaction_metrics",
         function=execute_get_transaction_metrics,
         permission=Permission.READ_ANALYTICS,
+    ),
+    "propose_refund": ToolDefinition(
+        name="propose_refund",
+        function=execute_propose_refund,
+        permission=Permission.PROPOSE_REFUND,
+        requires_approval=True,
     ),
 }

@@ -16,6 +16,7 @@ from fastapi.responses import (
 )
 
 from apps.api.schemas.chat import (
+    ApprovalRequest,
     ChatRequest,
     ChatResponse,
 )
@@ -23,6 +24,8 @@ from apps.api.dependencies.auth import get_current_user
 from apps.api.schemas.auth import AuthenticatedUser
 
 from ai.graphs.tool_agent_graph import (
+    PendingApprovalNotFoundError,
+    resume_agent_graph,
     run_agent_graph,
 )
 
@@ -34,6 +37,49 @@ from apps.api.services.llm_service import (
 logger = logging.getLogger(
     __name__
 )
+
+
+def _get_approval_request(result: dict) -> dict | None:
+    interrupts = result.get("__interrupt__") or []
+    if not interrupts:
+        return None
+    value = getattr(interrupts[0], "value", interrupts[0])
+    return value if isinstance(value, dict) else None
+
+
+def _chat_response_from_result(
+    result: dict,
+    *,
+    request_id: str,
+    latency_seconds: float,
+) -> ChatResponse:
+    tools_used = result.get("current_turn_tools", [])
+    approval_request = _get_approval_request(result)
+    if approval_request is not None:
+        return ChatResponse(
+            request_id=request_id,
+            status="approval_required",
+            approval_request=approval_request,
+            model=OLLAMA_MODEL,
+            latency_seconds=round(latency_seconds, 3),
+            tools_used=tools_used,
+            route=result.get("route"),
+            route_confidence=result.get("route_confidence"),
+            agent_action="approval",
+        )
+
+    messages = result["messages"]
+    response_text = messages[-1].text
+    return ChatResponse(
+        request_id=request_id,
+        response=response_text,
+        model=OLLAMA_MODEL,
+        latency_seconds=round(latency_seconds, 3),
+        tools_used=tools_used,
+        route=result.get("route"),
+        route_confidence=result.get("route_confidence"),
+        agent_action=("tool" if tools_used else "respond"),
+    )
 
 
 router = APIRouter(
@@ -69,7 +115,10 @@ async def stream_chat(
     async def events():
         yield json.dumps({
             "model": result.model,
-            "message": {"role": "assistant", "content": result.response},
+            "message": {
+                "role": "assistant",
+                "content": result.response or "",
+            },
             "done": False,
         }) + "\n"
         yield json.dumps({
@@ -79,6 +128,8 @@ async def stream_chat(
             "tools_used": result.tools_used,
             "route": result.route,
             "route_confidence": result.route_confidence,
+            "status": result.status,
+            "approval_request": result.approval_request,
         }) + "\n"
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
@@ -140,26 +191,10 @@ async def chat(
             latency,
         )
 
-        messages = result["messages"]
-        response_text = messages[-1].text
-        tools_used = result["current_turn_tools"]
-
-        return ChatResponse(
+        return _chat_response_from_result(
+            result,
             request_id=request_id,
-            response=response_text,
-            model=OLLAMA_MODEL,
-            latency_seconds=round(
-                latency,
-                3,
-            ),
-            tools_used=tools_used,
-            route=result.get("route"),
-            route_confidence=result.get("route_confidence"),
-            agent_action=(
-                "tool"
-                if tools_used
-                else "respond"
-            ),
+            latency_seconds=latency,
         )
 
     except GraphRecursionError as exc:
@@ -191,4 +226,63 @@ async def chat(
         raise HTTPException(
             status_code=500,
             detail="Agent execution failed.",
+        ) from exc
+
+
+@router.post(
+    "/approval",
+    response_model=ChatResponse,
+)
+async def submit_approval(
+    payload: ApprovalRequest,
+    request: Request,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+):
+    request_id = str(uuid.uuid4())
+    start = time.perf_counter()
+    thread_id = f"{current_user.user_id}:{payload.session_id}"
+
+    try:
+        result = await resume_agent_graph(
+            thread_id=thread_id,
+            approval={
+                "approved": payload.approved,
+                "comment": payload.comment,
+            },
+            graph=request.app.state.enterprise_graph,
+        )
+        return _chat_response_from_result(
+            result,
+            request_id=result.get("request_id", request_id),
+            latency_seconds=time.perf_counter() - start,
+        )
+    except GraphRecursionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The assistant reached its execution limit.",
+        ) from exc
+    except PendingApprovalNotFoundError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="No pending approval exists for this session.",
+        ) from exc
+    except httpx.TimeoutException as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Model request timed out",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Model service unavailable",
+        ) from exc
+    except Exception as exc:
+        logger.exception(
+            "Approval resume failed request_id=%s",
+            request_id,
+            extra={"request_id": request_id},
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Approval processing failed.",
         ) from exc

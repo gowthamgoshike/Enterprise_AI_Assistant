@@ -1,0 +1,51 @@
+import logging
+from typing import Literal
+
+from langgraph.types import Command, interrupt
+
+from ai.schemas.actions import ApprovalDecision
+from ai.schemas.graph_state import EnterpriseAgentState
+
+
+logger = logging.getLogger(__name__)
+
+
+def human_approval_node(
+    state: EnterpriseAgentState,
+) -> Command[Literal["action_approved", "action_rejected"]]:
+    """Pause the graph and route only after a validated human decision."""
+    decision = interrupt({
+        "type": "action_approval",
+        "title": "Refund approval required",
+        "action": state["pending_action"],
+        "message": "Review this refund before continuing.",
+    })
+    approval = ApprovalDecision.model_validate(decision)
+    approval_result = "APPROVED" if approval.approved else "REJECTED"
+    proposal = state["pending_action"]
+    logger.info(
+        "human_approval_resolved request_id=%s user_id=%s "
+        "action_id=%s action_type=%s approval=%s",
+        state["request_id"],
+        state["user_id"],
+        proposal["action_id"],
+        proposal["action_type"],
+        approval_result,
+        extra={
+            "request_id": state["request_id"],
+            "user_id": state["user_id"],
+            "action_id": proposal["action_id"],
+            "action_type": proposal["action_type"],
+            "approval": approval_result,
+        },
+    )
+
+    if approval.approved:
+        return Command(
+            update={"approval_status": "approved"},
+            goto="action_approved",
+        )
+    return Command(
+        update={"approval_status": "rejected"},
+        goto="action_rejected",
+    )

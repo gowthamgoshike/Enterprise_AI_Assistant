@@ -109,6 +109,38 @@ def test_send_chat_converts_401_to_session_expired(monkeypatch):
     assert not response.raise_called
 
 
+def test_submit_approval_uses_bearer_token(monkeypatch):
+    calls = []
+    response = FakeResponse(payload={"status": "completed"})
+
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return response
+
+    monkeypatch.setattr(api_client.requests, "post", fake_post)
+    result = api_client.submit_approval(
+        session_id="SESSION-1",
+        approved=True,
+        comment="Reviewed",
+        access_token="jwt-token",
+    )
+
+    assert calls == [(
+        f"{api_client.API_BASE_URL}/api/v1/chat/approval",
+        {
+            "json": {
+                "session_id": "SESSION-1",
+                "approved": True,
+                "comment": "Reviewed",
+            },
+            "headers": {"Authorization": "Bearer jwt-token"},
+            "timeout": 120,
+        },
+    )]
+    assert response.raise_called
+    assert result == {"status": "completed"}
+
+
 def test_stream_chat_uses_bearer_token_and_detects_401(monkeypatch):
     calls = []
     response = FakeResponse(

@@ -22,6 +22,7 @@ from apps.ui.services.api_client import (
     SessionExpiredError,
     login,
     send_chat,
+    submit_approval,
 )
 
 
@@ -71,6 +72,10 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 
+if "pending_approval" not in st.session_state:
+    st.session_state.pending_approval = None
+
+
 def clear_authenticated_session() -> None:
     st.session_state.access_token = None
     st.session_state.authenticated = False
@@ -78,6 +83,7 @@ def clear_authenticated_session() -> None:
     st.session_state.session_id = str(
         uuid.uuid4()
     )
+    st.session_state.pending_approval = None
     st.session_state.pop(
         "model_name",
         None,
@@ -181,6 +187,7 @@ if st.sidebar.button(
     st.session_state.session_id = str(
         uuid.uuid4()
     )
+    st.session_state.pending_approval = None
 
     st.rerun()
 
@@ -244,8 +251,71 @@ for message in st.session_state.messages:
         )
 
 
+pending_approval = st.session_state.pending_approval
+if pending_approval:
+    action = pending_approval["action"]
+    st.warning("Human approval required")
+    st.write("Transaction:", action["transaction_id"])
+    st.write(
+        "Amount:",
+        f"{action['currency']} {action['amount_cents'] / 100:,.2f}",
+    )
+    st.write("Reason:", action["reason"])
+    approval_comment = st.text_input(
+        "Approval comment (optional)",
+        key="approval_comment",
+    )
+    approve_column, reject_column = st.columns(2)
+    approve_clicked = approve_column.button(
+        "Approve",
+        type="primary",
+    )
+    reject_clicked = reject_column.button("Reject")
+
+    if approve_clicked or reject_clicked:
+        try:
+            with st.spinner("Recording decision..."):
+                approval_result = submit_approval(
+                    session_id=st.session_state.session_id,
+                    approved=approve_clicked,
+                    comment=approval_comment or None,
+                    access_token=st.session_state.access_token,
+                )
+            if approval_result.get("status") == "approval_required":
+                st.session_state.pending_approval = approval_result[
+                    "approval_request"
+                ]
+                final_response = (
+                    "Another action proposal requires human approval."
+                )
+            else:
+                st.session_state.pending_approval = None
+                final_response = approval_result.get("response") or (
+                    "The refund proposal was approved for future execution."
+                    if approve_clicked
+                    else "The refund proposal was rejected."
+                )
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": final_response,
+                "tools_used": approval_result.get("tools_used", []),
+                "route": approval_result.get("route"),
+                "route_confidence": approval_result.get("route_confidence"),
+            })
+            st.rerun()
+        except SessionExpiredError:
+            clear_authenticated_session()
+            st.session_state.authentication_notice = (
+                "Your session expired. Please log in again."
+            )
+            st.rerun()
+        except requests.RequestException as exc:
+            st.error(f"Unable to submit approval: {exc}")
+
+
 prompt = st.chat_input(
-    "Ask about enterprise transactions..."
+    "Ask about enterprise transactions...",
+    disabled=pending_approval is not None,
 )
 
 
@@ -275,6 +345,7 @@ if prompt:
         tools_used = []
         route = None
         confidence = None
+        approval_pending = False
 
         try:
 
@@ -299,9 +370,14 @@ if prompt:
                     access_token=st.session_state.access_token,
                 )
 
-            assistant_response = (
-                result["response"]
-            )
+            if result.get("status") == "approval_required":
+                st.session_state.pending_approval = result["approval_request"]
+                assistant_response = (
+                    "A refund proposal is ready and requires human approval."
+                )
+                approval_pending = True
+            else:
+                assistant_response = result["response"]
 
             st.markdown(
                 assistant_response
@@ -393,3 +469,5 @@ if prompt:
             "route_confidence": confidence,
         }
     )
+    if approval_pending:
+        st.rerun()

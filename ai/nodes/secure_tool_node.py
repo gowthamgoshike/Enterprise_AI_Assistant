@@ -133,6 +133,37 @@ async def secure_tool_node(
                     )
                     if inspect.isawaitable(result):
                         result = await result
+                    if definition.requires_approval:
+                        _log_authorization(
+                            context,
+                            tool_name,
+                            "ALLOWED",
+                            started_at,
+                        )
+                        logger.info(
+                            "human_approval_requested request_id=%s "
+                            "user_id=%s action_id=%s action_type=%s",
+                            context.request_id,
+                            context.user_id,
+                            result["action_id"],
+                            result["action_type"],
+                            extra={
+                                "request_id": context.request_id,
+                                "user_id": context.user_id,
+                                "action_id": result["action_id"],
+                                "action_type": result["action_type"],
+                            },
+                        )
+                        return {
+                            "messages": tool_messages,
+                            "current_turn_tools": [
+                                *state["current_turn_tools"],
+                                *executed_tools,
+                            ],
+                            "pending_action": result,
+                            "pending_tool_call_id": call_id,
+                            "approval_status": "pending",
+                        }
                 except AuthorizationError:
                     result = {"ok": False, "error": "permission_denied"}
                     status = "error"

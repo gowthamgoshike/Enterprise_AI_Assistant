@@ -1,5 +1,7 @@
 import json
 import logging
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -168,3 +170,81 @@ def test_chat_step_limit_returns_safe_error(monkeypatch):
         assert response.status_code == 503
         assert "execution limit" in response.json()["detail"]
         assert "internal details" not in response.text
+
+
+def test_chat_returns_approval_request_for_interrupted_graph(monkeypatch):
+    approval = {
+        "type": "action_approval",
+        "title": "Refund approval required",
+        "action": {
+            "transaction_id": "TX-123",
+            "amount_cents": 8745,
+            "currency": "USD",
+            "reason": "duplicate charge",
+        },
+    }
+    monkeypatch.setattr(chat_routes, "run_agent_graph", AsyncMock(
+        return_value={
+            "messages": [AIMessage(content="")],
+            "current_turn_tools": [],
+            "route": None,
+            "__interrupt__": [SimpleNamespace(value=approval)],
+        },
+    ))
+
+    response = client.post("/api/v1/chat", json={
+        "messages": [{"role": "user", "content": "Refund TX-123"}],
+        "session_id": "approval-session",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "approval_required"
+    assert response.json()["response"] is None
+    assert response.json()["approval_request"] == approval
+    assert response.json()["agent_action"] == "approval"
+
+
+def test_approval_endpoint_resumes_same_authenticated_thread(monkeypatch):
+    resume = AsyncMock(return_value={
+        "request_id": "REQ-original",
+        "messages": [AIMessage(content="The proposal was rejected.")],
+        "current_turn_tools": ["propose_refund"],
+        "route": None,
+    })
+    monkeypatch.setattr(chat_routes, "resume_agent_graph", resume)
+
+    response = client.post("/api/v1/chat/approval", json={
+        "session_id": "approval-session",
+        "approved": False,
+        "comment": "Wrong transaction",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["response"] == "The proposal was rejected."
+    assert response.json()["request_id"] == "REQ-original"
+    assert resume.await_args.kwargs["thread_id"] == (
+        "USER-TEST:approval-session"
+    )
+    assert resume.await_args.kwargs["approval"] == {
+        "approved": False,
+        "comment": "Wrong transaction",
+    }
+
+
+def test_approval_endpoint_rejects_session_without_pending_action(monkeypatch):
+    monkeypatch.setattr(chat_routes, "resume_agent_graph", AsyncMock(
+        side_effect=chat_routes.PendingApprovalNotFoundError(
+            "No pending approval"
+        ),
+    ))
+
+    response = client.post("/api/v1/chat/approval", json={
+        "session_id": "no-pending-action",
+        "approved": True,
+    })
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "No pending approval exists for this session."
+    }

@@ -79,6 +79,7 @@ def test_customer_tool_schema_does_not_accept_customer_identity():
                 "get_top_products",
                 "get_revenue_summary",
                 "get_transaction_metrics",
+                "propose_refund",
             },
         ),
     ],

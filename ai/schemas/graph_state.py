@@ -22,4 +22,7 @@ class EnterpriseAgentState(MessagesState):
     current_turn_tools: list[str]
     conversation_summary: str | None
     summarized_message_count: int
+    pending_action: dict | None
+    pending_tool_call_id: str | None
+    approval_status: str | None
     error: str | None
