@@ -359,6 +359,9 @@ async def run_agent_graph(
     thread_id: str,
     *,
     graph,
+    user_id: str,
+    user_role: str,
+    customer_id: str | None,
 ) -> dict:
     config = {
         "configurable": {"thread_id": thread_id},
@@ -367,6 +370,9 @@ async def run_agent_graph(
     initial_state: EnterpriseAgentState = {
         "messages": [HumanMessage(content=user_message)],
         "request_id": request_id,
+        "user_id": user_id,
+        "user_role": user_role,
+        "customer_id": customer_id,
         "route": None,
         "current_turn_tools": [],
         "error": None,

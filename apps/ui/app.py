@@ -19,6 +19,8 @@ from apps.ui.components.sidebar import (
     render_sidebar,
 )
 from apps.ui.services.api_client import (
+    SessionExpiredError,
+    login,
     send_chat,
 )
 
@@ -59,6 +61,93 @@ if "session_id" not in st.session_state:
     )
 
 
+if "access_token" not in st.session_state:
+
+    st.session_state.access_token = None
+
+
+if "authenticated" not in st.session_state:
+
+    st.session_state.authenticated = False
+
+
+def clear_authenticated_session() -> None:
+    st.session_state.access_token = None
+    st.session_state.authenticated = False
+    st.session_state.messages = []
+    st.session_state.session_id = str(
+        uuid.uuid4()
+    )
+    st.session_state.pop(
+        "model_name",
+        None,
+    )
+
+
+if (
+    not st.session_state.authenticated
+    or not st.session_state.access_token
+):
+    st.title(
+        "Enterprise AI Assistant"
+    )
+
+    if "authentication_notice" in st.session_state:
+        st.warning(
+            st.session_state.pop(
+                "authentication_notice"
+            )
+        )
+
+    email = st.text_input(
+        "Email"
+    )
+
+    password = st.text_input(
+        "Password",
+        type="password",
+    )
+
+    if st.button(
+        "Login"
+    ):
+        try:
+            result = login(
+                email,
+                password,
+            )
+            access_token = result[
+                "access_token"
+            ]
+            if not isinstance(
+                access_token,
+                str,
+            ) or not access_token:
+                raise TypeError(
+                    "Missing access token"
+                )
+
+        except (
+            requests.RequestException,
+            KeyError,
+            TypeError,
+        ):
+            st.error(
+                "Invalid email or password."
+            )
+
+        else:
+            st.session_state.access_token = access_token
+            st.session_state.authenticated = True
+            st.session_state.messages = []
+            st.session_state.session_id = str(
+                uuid.uuid4()
+            )
+            st.rerun()
+
+    st.stop()
+
+
 render_sidebar()
 
 
@@ -77,6 +166,12 @@ st.sidebar.caption(
     f"Session: "
     f"{st.session_state.session_id[:8]}"
 )
+
+if st.sidebar.button(
+    "Logout"
+):
+    clear_authenticated_session()
+    st.rerun()
 
 if st.sidebar.button(
     "Clear conversation"
@@ -201,6 +296,7 @@ if prompt:
                         for message in context_messages
                     ],
                     session_id=st.session_state.session_id,
+                    access_token=st.session_state.access_token,
                 )
 
             assistant_response = (
@@ -236,6 +332,14 @@ if prompt:
                     f"Latency: "
                     f"{latency:.2f}s"
                 )
+
+        except SessionExpiredError:
+
+            clear_authenticated_session()
+            st.session_state.authentication_notice = (
+                "Your session expired. Please log in again."
+            )
+            st.rerun()
 
         except requests.Timeout:
 

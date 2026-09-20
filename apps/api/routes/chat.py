@@ -5,6 +5,7 @@ import uuid
 
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     Request,
 )
@@ -18,6 +19,8 @@ from apps.api.schemas.chat import (
     ChatRequest,
     ChatResponse,
 )
+from apps.api.dependencies.auth import get_current_user
+from apps.api.schemas.auth import AuthenticatedUser
 
 from ai.graphs.tool_agent_graph import (
     run_agent_graph,
@@ -52,9 +55,16 @@ async def model_info():
 async def stream_chat(
     payload: ChatRequest,
     request: Request,
+    current_user: AuthenticatedUser = Depends(
+        get_current_user
+    ),
 ):
 
-    result = await chat(payload, request)
+    result = await chat(
+        payload,
+        request,
+        current_user,
+    )
 
     async def events():
         yield json.dumps({
@@ -81,6 +91,9 @@ async def stream_chat(
 async def chat(
     payload: ChatRequest,
     request: Request,
+    current_user: AuthenticatedUser = Depends(
+        get_current_user
+    ),
 ):
 
     try:
@@ -106,8 +119,14 @@ async def chat(
         result = await run_agent_graph(
             user_message=payload.messages[-1].content,
             request_id=request_id,
-            thread_id=payload.session_id,
+            thread_id=(
+                f"{current_user.user_id}:"
+                f"{payload.session_id}"
+            ),
             graph=request.app.state.enterprise_graph,
+            user_id=current_user.user_id,
+            user_role=current_user.role.value,
+            customer_id=current_user.customer_id,
         )
 
         latency = (

@@ -15,6 +15,9 @@ async def main(user_message: str):
     initial_state = {
         'messages': [HumanMessage(content=user_message)],
         'request_id': str(uuid.uuid4()),
+        'user_id': 'USER-EXAMPLE',
+        'user_role': 'CUSTOMER',
+        'customer_id': 'CUST-EXAMPLE',
         'route': None,
         'current_turn_tools': [],
         'error': None,

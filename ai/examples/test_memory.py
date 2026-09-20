@@ -10,7 +10,13 @@ from ai.graphs.tool_agent_graph import build_enterprise_tool_graph, run_agent_gr
 
 async def main() -> None:
     enterprise_tool_graph = build_enterprise_tool_graph(InMemorySaver())
-    run_turn = partial(run_agent_graph, graph=enterprise_tool_graph)
+    run_turn = partial(
+        run_agent_graph,
+        graph=enterprise_tool_graph,
+        user_id="USER-EXAMPLE",
+        user_role="CUSTOMER",
+        customer_id="CUST-EXAMPLE",
+    )
     thread_id = str(uuid.uuid4())
 
     result1 = await run_turn(

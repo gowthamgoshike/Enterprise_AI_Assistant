@@ -10,6 +10,9 @@ from fastapi.middleware.cors import (
     CORSMiddleware,
 )
 import apps.api.logging_config
+from apps.api.routes.auth import (
+    router as auth_router,
+)
 from apps.api.routes.chat import (
     router as chat_router,
 )
@@ -66,6 +69,11 @@ async def root():
 
 app.include_router(
     health_router
+)
+
+app.include_router(
+    auth_router,
+    prefix="/api/v1",
 )
 
 app.include_router(

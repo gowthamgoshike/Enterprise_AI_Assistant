@@ -1,14 +1,31 @@
 import json
 import logging
 
+import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, HumanMessage
 
+from apps.api.dependencies.auth import get_current_user
 from apps.api.main import app
 from apps.api.routes import chat as chat_routes
+from apps.api.schemas.auth import AuthenticatedUser
+from services.auth_service.models import UserRole
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def authenticated_chat_user():
+    user = AuthenticatedUser(
+        user_id="USER-TEST",
+        email="customer@example.com",
+        role=UserRole.CUSTOMER,
+        customer_id="CUST-001",
+    )
+    app.dependency_overrides[get_current_user] = lambda: user
+    yield user
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_graph_failure_logs_metadata_and_returns_safe_error(monkeypatch, caplog):
@@ -36,8 +53,25 @@ def test_chat_endpoints_use_graph(monkeypatch):
     calls = []
     tool_names = ["get_revenue_summary", "get_transaction_metrics", "get_top_products"]
 
-    async def fake_graph(*, user_message, request_id, thread_id, graph):
-        calls.append((user_message, request_id, thread_id, graph))
+    async def fake_graph(
+        *,
+        user_message,
+        request_id,
+        thread_id,
+        graph,
+        user_id,
+        user_role,
+        customer_id,
+    ):
+        calls.append({
+            "user_message": user_message,
+            "request_id": request_id,
+            "thread_id": thread_id,
+            "graph": graph,
+            "user_id": user_id,
+            "user_role": user_role,
+            "customer_id": customer_id,
+        })
         return {"messages": [
             AIMessage(content="", tool_calls=[
                 {"name": name, "args": {}, "id": f"call-{i}"}
@@ -58,7 +92,7 @@ def test_chat_endpoints_use_graph(monkeypatch):
         json={"messages": messages, "session_id": "conversation-123"},
     )
     assert response.status_code == 200
-    assert response.json()["request_id"] == calls[0][1]
+    assert response.json()["request_id"] == calls[0]["request_id"]
     assert response.json()["response"] == "Revenue is 100."
     assert response.json()["model"] == "test-model"
     assert response.json()["latency_seconds"] >= 0
@@ -80,10 +114,13 @@ def test_chat_endpoints_use_graph(monkeypatch):
     assert events[-1]["route_confidence"] is None
     assert events[-1]["tools_used"] == tool_names
     assert len(calls) == 2
-    assert all(call[0] == messages[-1]["content"] for call in calls)
-    assert all(call[1] for call in calls)
-    assert all(call[2] == "conversation-123" for call in calls)
-    assert all(call[3] is app.state.enterprise_graph for call in calls)
+    assert all(call["user_message"] == messages[-1]["content"] for call in calls)
+    assert all(call["request_id"] for call in calls)
+    assert all(call["thread_id"] == "USER-TEST:conversation-123" for call in calls)
+    assert all(call["graph"] is app.state.enterprise_graph for call in calls)
+    assert all(call["user_id"] == "USER-TEST" for call in calls)
+    assert all(call["user_role"] == "CUSTOMER" for call in calls)
+    assert all(call["customer_id"] == "CUST-001" for call in calls)
 
 
 def test_empty_chat_history_is_rejected():

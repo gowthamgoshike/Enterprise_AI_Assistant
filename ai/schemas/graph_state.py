@@ -15,6 +15,9 @@ class EnterpriseState(TypedDict):
 
 class EnterpriseAgentState(MessagesState):
     request_id: str
+    user_id: str
+    user_role: str
+    customer_id: str | None
     route: str | None
     current_turn_tools: list[str]
     conversation_summary: str | None

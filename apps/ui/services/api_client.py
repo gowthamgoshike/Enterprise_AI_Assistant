@@ -5,6 +5,47 @@ import requests
 from apps.ui.config import API_BASE_URL
 
 
+class SessionExpiredError(RuntimeError):
+    """The API rejected the current bearer token."""
+
+
+def _authorization_headers(
+    access_token: str,
+) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {access_token}",
+    }
+
+
+def _raise_for_authenticated_request(
+    response: requests.Response,
+) -> None:
+    if response.status_code == 401:
+        raise SessionExpiredError(
+            "Session expired"
+        )
+
+    response.raise_for_status()
+
+
+def login(
+    email: str,
+    password: str,
+) -> dict:
+    response = requests.post(
+        f"{API_BASE_URL}/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": password,
+        },
+        timeout=30,
+    )
+
+    response.raise_for_status()
+
+    return response.json()
+
+
 def get_api_health() -> dict:
 
     response = requests.get(
@@ -30,6 +71,7 @@ def get_model_health() -> dict:
 def send_chat(
     messages: list[dict],
     session_id: str,
+    access_token: str,
 ) -> dict:
 
     response = requests.post(
@@ -38,10 +80,15 @@ def send_chat(
             "messages": messages,
             "session_id": session_id,
         },
-        timeout=180,
+        headers=_authorization_headers(
+            access_token
+        ),
+        timeout=120,
     )
 
-    response.raise_for_status()
+    _raise_for_authenticated_request(
+        response
+    )
 
     return response.json()
 
@@ -49,6 +96,7 @@ def send_chat(
 def stream_chat(
     messages: list[dict],
     session_id: str,
+    access_token: str,
 ):
 
     with requests.post(
@@ -60,11 +108,16 @@ def stream_chat(
             "messages": messages,
             "session_id": session_id,
         },
+        headers=_authorization_headers(
+            access_token
+        ),
         stream=True,
-        timeout=180,
+        timeout=120,
     ) as response:
 
-        response.raise_for_status()
+        _raise_for_authenticated_request(
+            response
+        )
 
         for line in response.iter_lines():
 

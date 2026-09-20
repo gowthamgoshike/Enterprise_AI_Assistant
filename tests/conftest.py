@@ -16,6 +16,12 @@ def isolated_agent_graph(monkeypatch):
     monkeypatch.setattr(tool_agent_graph, "enterprise_tool_graph", compiled, raising=False)
     monkeypatch.setattr(
         tool_agent_graph, "run_agent_graph",
-        partial(tool_agent_graph.run_agent_graph, graph=compiled),
+        partial(
+            tool_agent_graph.run_agent_graph,
+            graph=compiled,
+            user_id="USER-TEST",
+            user_role="ANALYST",
+            customer_id=None,
+        ),
     )
     return compiled

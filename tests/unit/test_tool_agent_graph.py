@@ -60,6 +60,9 @@ def test_agent_context_includes_summary_before_recent_messages(monkeypatch):
     state = {
         'messages': [HumanMessage(content='What about that transaction?')],
         'request_id': 'REQ-summary',
+        'user_id': 'USER-SECRET-123',
+        'user_role': 'CUSTOMER',
+        'customer_id': 'CUST-SECRET-456',
         'route': None,
         'current_turn_tools': [],
         'conversation_summary': 'The current topic is TX-123.',
@@ -77,6 +80,8 @@ def test_agent_context_includes_summary_before_recent_messages(monkeypatch):
         ),
     )
     assert context[2] is state['messages'][0]
+    assert 'USER-SECRET-123' not in str(context)
+    assert 'CUST-SECRET-456' not in str(context)
 
 
 def test_tools_node_bounds_and_logs_large_results(monkeypatch, caplog):
@@ -152,6 +157,9 @@ def test_same_thread_restores_history_without_repeating_prior_tools(
     snapshot = graph.enterprise_tool_graph.get_state(config)
     assert snapshot.values['messages'] == second['messages']
     assert snapshot.values['request_id'] == 'REQ-memory-2'
+    assert snapshot.values['user_id'] == 'USER-TEST'
+    assert snapshot.values['user_role'] == 'ANALYST'
+    assert snapshot.values['customer_id'] is None
     assert snapshot.values['current_turn_tools'] == []
     assert len(list(graph.enterprise_tool_graph.get_state_history(config))) > 1
 
