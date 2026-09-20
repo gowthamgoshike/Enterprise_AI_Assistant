@@ -3,6 +3,8 @@ import json
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+import psycopg
+from psycopg_pool import PoolTimeout
 from langchain_core.messages import AIMessage
 from sqlalchemy.exc import OperationalError
 
@@ -19,6 +21,7 @@ from core import retry
 from services.auth_service.models import UserRole
 from services.auth_service.permissions import Permission
 from services.transaction_service import repository
+from data.database.reliability import is_database_unavailable_error
 
 
 def test_backoff_is_exponential_capped_and_jittered(monkeypatch):
@@ -80,6 +83,25 @@ def test_repository_translates_operational_error(monkeypatch):
 
     assert error.value.code == "database_unavailable"
     assert "secret" not in error.value.safe_message
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        psycopg.OperationalError("connection refused"),
+        PoolTimeout("pool exhausted"),
+        RuntimeError("programming bug"),
+    ],
+)
+def test_checkpoint_database_error_classification(error):
+    expected = not isinstance(error, RuntimeError)
+    assert is_database_unavailable_error(error) is expected
+
+
+def test_checkpoint_database_error_classification_follows_cause():
+    wrapper = RuntimeError("graph failed")
+    wrapper.__cause__ = psycopg.OperationalError("connection refused")
+    assert is_database_unavailable_error(wrapper) is True
 
 
 def _secure_state(tool_name: str) -> dict:

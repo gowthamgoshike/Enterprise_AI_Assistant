@@ -438,11 +438,10 @@ if prompt:
                 assistant_response
             )
 
-        except requests.HTTPError as exc:
+        except requests.HTTPError:
 
             assistant_response = (
-                "The AI service returned "
-                f"an error: {exc}"
+                "The request could not be completed."
             )
 
             st.error(

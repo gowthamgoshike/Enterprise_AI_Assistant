@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 import uuid
 
@@ -33,6 +34,7 @@ from apps.api.services.llm_service import (
     OLLAMA_MODEL,
 )
 from core.errors import ModelUnavailableError
+from data.database.reliability import is_database_unavailable_error
 
 
 logger = logging.getLogger(
@@ -43,6 +45,42 @@ RETRYABLE_ERROR_CODES = {
     "database_unavailable",
     "tool_timeout",
 }
+TRANSACTION_ID_PATTERN = re.compile(r"\bTX-[A-Za-z0-9][A-Za-z0-9-]*\b", re.I)
+
+
+def _database_failure_response(
+    *,
+    request_id: str,
+    started_at: float,
+    user_message: str | None = None,
+    refund_status_uncertain: bool = False,
+) -> ChatResponse:
+    if refund_status_uncertain:
+        message = (
+            "The refund service is temporarily unavailable, so I couldn't "
+            "confirm the operation's current status."
+        )
+    elif (
+        user_message
+        and "status" in user_message.casefold()
+        and TRANSACTION_ID_PATTERN.search(user_message)
+    ):
+        message = (
+            "I couldn't verify the current transaction because the "
+            "transaction service is temporarily unavailable."
+        )
+    else:
+        message = "The data service is temporarily unavailable."
+    return ChatResponse(
+        request_id=request_id,
+        response=message,
+        status="degraded",
+        model=OLLAMA_MODEL,
+        latency_seconds=round(time.perf_counter() - started_at, 3),
+        agent_action="error",
+        error_code="database_unavailable",
+        retryable=True,
+    )
 
 
 def _get_approval_request(result: dict) -> dict | None:
@@ -161,13 +199,10 @@ async def chat(
         get_current_user
     ),
 ):
+    request_id = str(uuid.uuid4())
+    start = time.perf_counter()
 
     try:
-
-        request_id = str(
-            uuid.uuid4()
-        )
-
         logger.info(
             "agent_request request_id=%s thread_id=%s message_length=%d",
             request_id,
@@ -179,8 +214,6 @@ async def chat(
                 "message_length": len(payload.messages[-1].content),
             },
         )
-
-        start = time.perf_counter()
 
         result = await run_agent_graph(
             user_message=payload.messages[-1].content,
@@ -246,6 +279,21 @@ async def chat(
         ) from exc
 
     except Exception as exc:
+        if is_database_unavailable_error(exc):
+            logger.warning(
+                "Agent database unavailable request_id=%s error_type=%s",
+                request_id,
+                type(exc).__name__,
+                extra={
+                    "request_id": request_id,
+                    "error_code": "database_unavailable",
+                },
+            )
+            return _database_failure_response(
+                request_id=request_id,
+                started_at=start,
+                user_message=payload.messages[-1].content,
+            )
         logger.exception(
             "Agent graph execution failed request_id=%s", request_id,
             extra={"request_id": request_id},
@@ -304,6 +352,21 @@ async def submit_approval(
             detail="Model service unavailable",
         ) from exc
     except Exception as exc:
+        if is_database_unavailable_error(exc):
+            logger.warning(
+                "Approval database unavailable request_id=%s error_type=%s",
+                request_id,
+                type(exc).__name__,
+                extra={
+                    "request_id": request_id,
+                    "error_code": "database_unavailable",
+                },
+            )
+            return _database_failure_response(
+                request_id=request_id,
+                started_at=start,
+                refund_status_uncertain=True,
+            )
         logger.exception(
             "Approval resume failed request_id=%s",
             request_id,

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import psycopg
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -49,6 +50,29 @@ def test_graph_failure_logs_metadata_and_returns_safe_error(monkeypatch, caplog)
     assert record.request_id
     assert "sensitive question" not in caplog.text
     assert any(r.exc_info for r in caplog.records)
+
+
+def test_checkpoint_database_outage_returns_degraded_response(monkeypatch, caplog):
+    monkeypatch.setattr(chat_routes, "run_agent_graph", AsyncMock(
+        side_effect=psycopg.OperationalError("private connection details"),
+    ))
+
+    with caplog.at_level(logging.WARNING, logger=chat_routes.__name__):
+        response = client.post("/api/v1/chat", json={
+            "messages": [{
+                "role": "user",
+                "content": "What's the status of TX-A?",
+            }],
+            "session_id": "database-outage",
+        })
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["error_code"] == "database_unavailable"
+    assert response.json()["retryable"] is True
+    assert "couldn't verify the current transaction" in response.json()["response"]
+    assert "private connection details" not in response.text
+    assert "private connection details" not in caplog.text
 
 
 def test_chat_endpoints_use_graph(monkeypatch):
