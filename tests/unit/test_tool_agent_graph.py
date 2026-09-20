@@ -379,8 +379,11 @@ def test_loop_is_bounded(monkeypatch, fake_tools):
 
 
 def test_only_approved_read_tools_registered():
-    assert set(graph.tool_node.tools_by_name) == {
-        'get_transaction', 'get_top_products', 'get_revenue_summary', 'get_transaction_metrics',
+    from ai.tools.secure_registry import SECURE_TOOL_REGISTRY
+
+    assert set(SECURE_TOOL_REGISTRY) == {
+        'get_my_transactions', 'get_transaction', 'get_top_products',
+        'get_revenue_summary', 'get_transaction_metrics',
     }
 
 

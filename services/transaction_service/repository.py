@@ -59,13 +59,34 @@ GET_TRANSACTION = text("""
 """)
 
 
-GET_CUSTOMER_TRANSACTIONS = text("""
+FIND_CUSTOMER_TRANSACTION = text("""
     SELECT
         transaction_id,
+        customer_id,
         product_id,
         amount_cents,
         currency,
         status,
+        transaction_type,
+        source,
+        event_time
+    FROM transactions
+    WHERE transaction_id = :transaction_id
+      AND customer_id = :customer_id
+    LIMIT 1
+""")
+
+
+GET_TRANSACTIONS_BY_CUSTOMER = text("""
+    SELECT
+        transaction_id,
+        customer_id,
+        product_id,
+        amount_cents,
+        currency,
+        status,
+        transaction_type,
+        source,
         event_time
     FROM transactions
     WHERE customer_id = :customer_id
@@ -89,16 +110,36 @@ def get_transaction(transaction_id: str) -> dict | None:
         return dict(row) if row else None
 
 
-def get_customer_transactions(
+def find_customer_transaction(
+    transaction_id: str,
+    customer_id: str,
+) -> dict | None:
+    with engine.connect() as connection:
+        result = connection.execute(
+            FIND_CUSTOMER_TRANSACTION,
+            {
+                "transaction_id": transaction_id,
+                "customer_id": customer_id,
+            },
+        )
+        row = result.mappings().first()
+        return dict(row) if row else None
+
+
+def get_transactions_by_customer(
     customer_id: str,
     limit: int = 20,
 ) -> list[dict]:
     with engine.connect() as connection:
         result = connection.execute(
-            GET_CUSTOMER_TRANSACTIONS,
+            GET_TRANSACTIONS_BY_CUSTOMER,
             {
                 "customer_id": customer_id,
                 "limit": limit,
             },
         )
         return [dict(row) for row in result.mappings()]
+
+
+# Backwards-compatible name for callers written before the scoped tool flow.
+get_customer_transactions = get_transactions_by_customer

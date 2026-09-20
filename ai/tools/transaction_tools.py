@@ -12,6 +12,8 @@ from ai.schemas.tools import (
 from langchain_core.tools import tool
 
 from services.transaction_service.service import find_transaction
+
+
 def get_transaction_tool(
     transaction_id: str,
 ) -> ToolResult:
@@ -74,3 +76,20 @@ def get_transaction(
     return TransactionLookupResult.model_validate(
         raw_result
     ).model_dump(mode="json")
+
+
+@tool
+def get_my_transactions(
+    limit: int = 10,
+) -> dict:
+    """
+    Return the authenticated customer's most recent transactions.
+
+    Use this tool when a customer asks for their transactions or transaction
+    history. The limit defaults to 10 and is clamped to 1 through 20. Customer
+    identity is supplied by the trusted application runtime, not tool arguments.
+    """
+
+    raise RuntimeError(
+        "get_my_transactions requires trusted execution context"
+    )
