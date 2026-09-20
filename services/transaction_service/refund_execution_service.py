@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from ai.schemas.actions import RefundExecutionResult
 from data.database.connection import engine
+from data.database.reliability import translate_database_errors
 from services.transaction_service.exceptions import (
     RefundError,
     RefundNotAllowedError,
@@ -39,7 +40,7 @@ def execute_refund(
 ) -> RefundExecutionResult:
     transaction_id = normalize_transaction_id(transaction_id)
 
-    with engine.begin() as connection:
+    with translate_database_errors(), engine.begin() as connection:
         existing = find_refund_by_action_id(connection, action_id)
         if existing:
             return _existing_result(existing)

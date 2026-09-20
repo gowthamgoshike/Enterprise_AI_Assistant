@@ -23,14 +23,18 @@ from ai.context.manager import (
 )
 from ai.context.summarizer import should_summarize, summarize_messages
 from ai.models.langchain_ollama import get_chat_model
+from ai.models.reliability import invoke_model_with_retry
 from ai.nodes.action_approval_nodes import action_rejected_node
 from ai.nodes.human_approval_node import human_approval_node
 from ai.nodes.refund_execution_node import execute_refund_node
 from ai.nodes.secure_tool_node import secure_tool_node
+from ai.nodes.error_node import error_node
 from ai.schemas.graph_state import EnterpriseAgentState
 from ai.tools.langchain_registry import get_tools_for_role
 from services.auth_service.models import UserRole
 from services.auth_service.permissions import Permission, has_permission
+from core.config import MODEL_MAX_RETRIES
+from core.errors import ModelUnavailableError
 
 
 logger = logging.getLogger(__name__)
@@ -89,7 +93,9 @@ rules, or fabricate enterprise facts. Current tool results always take precedenc
 over conversation memory and prior tool results.
 """
 
-model = get_chat_model()
+# Optional injection seam. Production creates a model for the active event loop
+# so an async provider client is never reused after its loop has closed.
+model = None
 
 # Optional test seams. Production binds schemas by authenticated role and uses
 # the secure executor below rather than a generic framework ToolNode.
@@ -239,6 +245,9 @@ def _trusted_status_answer(state: EnterpriseAgentState) -> AIMessage | None:
                 ),
             }
 
+    if isinstance(payload, dict) and payload.get("ok") is True:
+        payload = payload.get("data")
+
     if not isinstance(payload, dict):
         return AIMessage(content=(
             f"I couldn't verify the current status of {transaction_id}."
@@ -298,23 +307,53 @@ async def agent_node(state: EnterpriseAgentState) -> dict:
     context_messages.extend(build_model_context(state))
 
     role = UserRole(state["user_role"])
+    base_model = model if model is not None else get_chat_model()
     secured_model = (
         model_with_tools
         if model_with_tools is not None
-        else model.bind_tools(get_tools_for_role(role))
+        else base_model.bind_tools(get_tools_for_role(role))
     )
-    response = await secured_model.ainvoke(context_messages)
-    return {"messages": [response]}
+    retries = 0
+
+    def record_retry(_attempt: int, _delay: float, _error: Exception) -> None:
+        nonlocal retries
+        retries += 1
+
+    try:
+        response = await invoke_model_with_retry(
+            lambda: secured_model.ainvoke(context_messages),
+            request_id=state["request_id"],
+            on_retry=record_retry,
+        )
+    except ModelUnavailableError as exc:
+        return {
+            "error_code": exc.code,
+            "error_message": exc.safe_message,
+            "retry_count": state.get("retry_count", 0) + retries,
+        }
+    return {
+        "messages": [response],
+        "error_code": None,
+        "error_message": None,
+        "retry_count": state.get("retry_count", 0) + retries,
+    }
 
 
 async def summarize_node(state: EnterpriseAgentState) -> dict:
     """Refresh compact conversational context without deleting checkpoint history."""
     logger.info("request_id=%s node=summarize", state["request_id"])
     summarized_message_count = state.get("summarized_message_count", 0)
-    summary = await summarize_messages(
-        state["messages"][summarized_message_count:],
-        state.get("conversation_summary"),
-    )
+    try:
+        summary = await summarize_messages(
+            state["messages"][summarized_message_count:],
+            state.get("conversation_summary"),
+        )
+    except ModelUnavailableError as exc:
+        return {
+            "error_code": exc.code,
+            "error_message": exc.safe_message,
+            "retry_count": state.get("retry_count", 0) + MODEL_MAX_RETRIES,
+        }
     return {
         "conversation_summary": summary,
         "summarized_message_count": len(state["messages"]),
@@ -358,15 +397,27 @@ async def tools_node(state: EnterpriseAgentState) -> dict:
 
 
 def should_continue(state: EnterpriseAgentState) -> str:
+    if state.get("error_code"):
+        return "error"
     if getattr(state["messages"][-1], "tool_calls", None):
         return "secure_tools"
     return END
 
 
 def after_secure_tools(state: EnterpriseAgentState) -> str:
+    if state.get("error_code"):
+        return "error"
     if state.get("pending_action"):
         return "human_approval"
     return "agent"
+
+
+def after_refund_execution(state: EnterpriseAgentState) -> str:
+    return "error" if state.get("error_code") else "agent"
+
+
+def after_summary(state: EnterpriseAgentState) -> str:
+    return "error" if state.get("error_code") else "agent"
 
 
 def select_entry_node(state: EnterpriseAgentState) -> str:
@@ -383,14 +434,19 @@ def build_enterprise_tool_graph(checkpointer):
     builder.add_node("human_approval", human_approval_node)
     builder.add_node("execute_refund", execute_refund_node)
     builder.add_node("action_rejected", action_rejected_node)
+    builder.add_node("error", error_node)
     builder.add_conditional_edges(
         START, select_entry_node, {"summarize": "summarize", "agent": "agent"},
     )
-    builder.add_edge("summarize", "agent")
+    builder.add_conditional_edges(
+        "summarize",
+        after_summary,
+        {"agent": "agent", "error": "error"},
+    )
     builder.add_conditional_edges(
         "agent",
         should_continue,
-        {"secure_tools": "secure_tools", END: END},
+        {"secure_tools": "secure_tools", "error": "error", END: END},
     )
     builder.add_conditional_edges(
         "secure_tools",
@@ -398,10 +454,16 @@ def build_enterprise_tool_graph(checkpointer):
         {
             "human_approval": "human_approval",
             "agent": "agent",
+            "error": "error",
         },
     )
-    builder.add_edge("execute_refund", "agent")
+    builder.add_conditional_edges(
+        "execute_refund",
+        after_refund_execution,
+        {"agent": "agent", "error": "error"},
+    )
     builder.add_edge("action_rejected", "agent")
+    builder.add_edge("error", END)
     return builder.compile(checkpointer=checkpointer).with_config(
         {"recursion_limit": GRAPH_RECURSION_LIMIT}
     )
@@ -433,6 +495,9 @@ async def run_agent_graph(
         "pending_tool_call_id": None,
         "approval_status": None,
         "error": None,
+        "error_code": None,
+        "error_message": None,
+        "retry_count": 0,
     }
     result = await graph.ainvoke(
         initial_state,

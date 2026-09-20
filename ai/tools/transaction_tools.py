@@ -5,6 +5,7 @@ from sqlalchemy.exc import (
 from ai.tools.exceptions import (
     ToolExecutionError,
 )
+from core.errors import DatabaseUnavailableError
 from ai.schemas.tools import (
     TransactionLookupResult,
     ToolResult,
@@ -34,7 +35,7 @@ def get_transaction_tool(
             normalized_transaction_id
         )
 
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, DatabaseUnavailableError) as exc:
 
         raise ToolExecutionError(
             code="DATABASE_UNAVAILABLE",

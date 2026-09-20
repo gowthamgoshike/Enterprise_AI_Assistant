@@ -1,10 +1,17 @@
-class RefundError(Exception):
+from core.errors import (
+    AppError,
+    RefundNotAllowedError as CoreRefundNotAllowedError,
+    TransactionNotFoundError as CoreTransactionNotFoundError,
+)
+
+
+class RefundError(AppError):
     pass
 
 
-class TransactionNotFoundError(RefundError):
+class TransactionNotFoundError(CoreTransactionNotFoundError, RefundError):
     pass
 
 
-class RefundNotAllowedError(RefundError):
+class RefundNotAllowedError(CoreRefundNotAllowedError, RefundError):
     pass

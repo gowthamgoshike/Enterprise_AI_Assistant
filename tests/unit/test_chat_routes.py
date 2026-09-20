@@ -172,6 +172,29 @@ def test_chat_step_limit_returns_safe_error(monkeypatch):
         assert "internal details" not in response.text
 
 
+def test_chat_returns_structured_degraded_response(monkeypatch):
+    monkeypatch.setattr(chat_routes, "run_agent_graph", AsyncMock(
+        return_value={
+            "messages": [AIMessage(
+                content="The AI service is temporarily unavailable."
+            )],
+            "current_turn_tools": [],
+            "error_code": "model_unavailable",
+        },
+    ))
+
+    response = client.post("/api/v1/chat", json={
+        "messages": [{"role": "user", "content": "Explain Kafka"}],
+        "session_id": "degraded-session",
+    })
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["agent_action"] == "error"
+    assert response.json()["error_code"] == "model_unavailable"
+    assert response.json()["retryable"] is True
+
+
 def test_chat_returns_approval_request_for_interrupted_graph(monkeypatch):
     approval = {
         "type": "action_approval",

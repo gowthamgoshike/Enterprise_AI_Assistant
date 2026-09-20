@@ -388,12 +388,12 @@ def test_only_approved_tools_registered():
 
 
 def test_tool_failures_do_not_expose_exception(monkeypatch):
-    from ai.tools import transaction_tools
+    from ai.tools import secure_executors
 
     def fail(_):
         raise RuntimeError('private database credentials')
 
-    monkeypatch.setattr(transaction_tools, 'find_transaction', fail)
+    monkeypatch.setattr(secure_executors, 'find_transaction', fail)
     model = AsyncMock()
     model.ainvoke.side_effect = [
         AIMessage(content='', tool_calls=[call(transaction_id='TX-123')]),

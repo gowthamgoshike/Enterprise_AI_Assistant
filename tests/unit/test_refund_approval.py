@@ -175,7 +175,10 @@ def test_secure_node_denies_customer_refund_before_executor(monkeypatch):
 
     assert json.loads(result["messages"][0].content) == {
         "ok": False,
-        "error": "permission_denied",
+        "data": None,
+        "error_code": "permission_denied",
+        "message": "You are not authorized to perform this action.",
+        "retryable": False,
     }
     assert result["messages"][0].status == "error"
     assert result.get("pending_action") is None
@@ -259,7 +262,7 @@ def test_graph_interrupts_and_resumes_approval(
     )
     tool_payload = json.loads(tool_message.content)
     actual_status = (
-        tool_payload["refund"]["status"]
+            tool_payload["data"]["refund"]["status"]
         if approved
         else tool_payload["status"]
     )

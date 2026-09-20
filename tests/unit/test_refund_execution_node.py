@@ -44,8 +44,10 @@ def test_execution_node_rechecks_execute_permission(monkeypatch):
     execution.assert_not_called()
     assert json.loads(result["messages"][0].content) == {
         "ok": False,
-        "error": "permission_denied",
+        "data": None,
+        "error_code": "permission_denied",
         "message": "Refund execution permission denied",
+        "retryable": False,
     }
     assert result["messages"][0].status == "error"
 
@@ -76,8 +78,8 @@ def test_execution_node_preserves_action_id_and_uses_structured_result(
         "request_id": "REQ-1",
     }
     payload = json.loads(result["messages"][0].content)
-    assert payload["refund"]["status"] == "completed"
-    assert payload["refund"]["amount_cents"] == 8745
+    assert payload["data"]["refund"]["status"] == "completed"
+    assert payload["data"]["refund"]["amount_cents"] == 8745
     assert result["current_turn_tools"] == [
         "propose_refund",
         "execute_refund",
@@ -97,8 +99,10 @@ def test_execution_node_reports_toctou_eligibility_failure(monkeypatch):
 
     assert json.loads(result["messages"][0].content) == {
         "ok": False,
-        "error": "refund_not_allowed",
+        "data": None,
+        "error_code": "refund_not_allowed",
         "message": "Transaction is no longer eligible for refund",
+        "retryable": False,
     }
     assert result["messages"][0].status == "error"
     assert result["pending_action"] is None

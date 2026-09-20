@@ -46,6 +46,8 @@ class ChatResponse(BaseModel):
     status: Literal[
         "completed",
         "approval_required",
+        "failed",
+        "degraded",
     ] = "completed"
 
     approval_request: dict | None = None
@@ -64,4 +66,9 @@ class ChatResponse(BaseModel):
         "respond",
         "tool",
         "approval",
+        "error",
     ]
+
+    error_code: str | None = None
+
+    retryable: bool = False

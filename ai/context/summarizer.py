@@ -4,11 +4,13 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from ai.context.config import SUMMARY_TRIGGER_MESSAGES
 from ai.models.langchain_ollama import get_chat_model
+from ai.models.reliability import invoke_model_with_retry
 from ai.prompts.memory_prompts import CONVERSATION_SUMMARY_PROMPT
 from ai.schemas.graph_state import EnterpriseAgentState
 
 
-summary_model = get_chat_model()
+# Optional injection seam; avoid retaining an async client across event loops.
+summary_model = None
 TRANSACTION_ID_PATTERN = re.compile(r"TX-[A-Za-z0-9][A-Za-z0-9-]*", re.IGNORECASE)
 MAX_SUMMARY_TRANSACTION_IDS = 20
 
@@ -57,10 +59,15 @@ New conversation:
 Create an updated concise summary.
 """
 
-    response = await summary_model.ainvoke([
+    model_messages = [
         SystemMessage(content=CONVERSATION_SUMMARY_PROMPT),
         HumanMessage(content=prompt),
-    ])
+    ]
+    active_model = summary_model if summary_model is not None else get_chat_model()
+    response = await invoke_model_with_retry(
+        lambda: active_model.ainvoke(model_messages),
+        operation_name="conversation_summary",
+    )
 
     summary = (
         response.content

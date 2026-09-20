@@ -2,17 +2,31 @@ import inspect
 import json
 import logging
 import time
+import asyncio
 
 from langchain_core.messages import ToolMessage
 from pydantic import ValidationError
 
 from ai.schemas.graph_state import EnterpriseAgentState
+from ai.schemas.tool_result import ToolResult
 from ai.tools.context import ToolExecutionContext
 from ai.tools.langchain_registry import TOOL_MAP
 from ai.tools.secure_registry import SECURE_TOOL_REGISTRY
 from services.auth_service.authorization_service import require_permission
 from services.auth_service.exceptions import AuthorizationError
 from services.auth_service.models import UserRole
+from core.config import (
+    DATABASE_MAX_RETRIES,
+    TOOL_MAX_RETRIES,
+    TOOL_TIMEOUT_SECONDS,
+)
+from core.errors import (
+    BusinessRuleError,
+    DatabaseUnavailableError,
+    PermissionDeniedError,
+    ToolTimeoutError,
+)
+from core.retry import retry_async, run_with_timeout
 
 
 logger = logging.getLogger(__name__)
@@ -90,6 +104,42 @@ async def secure_tool_node(
     )
     tool_messages = []
     executed_tools = []
+    error_code = None
+    error_message = None
+    retry_count = state.get("retry_count", 0)
+
+    def record_retry(_attempt: int, _delay: float, _error: Exception) -> None:
+        nonlocal retry_count
+        retry_count += 1
+
+    def failure_result(error: Exception) -> ToolResult:
+        return ToolResult.failure(
+            error_code=getattr(error, "code", "internal_error"),
+            message=getattr(
+                error,
+                "safe_message",
+                "The operation could not be completed.",
+            ),
+            retryable=bool(getattr(error, "retryable", False)),
+        )
+
+    async def invoke(definition, validated_arguments, context):
+        if inspect.iscoroutinefunction(definition.function):
+            return await run_with_timeout(
+                definition.function(
+                    context=context,
+                    **validated_arguments,
+                ),
+                TOOL_TIMEOUT_SECONDS,
+            )
+        # Keep synchronous database work off the event loop. A timeout is not
+        # applied here because cancelling asyncio.to_thread cannot cancel the
+        # underlying database operation safely.
+        return await asyncio.to_thread(
+            definition.function,
+            context=context,
+            **validated_arguments,
+        )
 
     for call in getattr(last_message, "tool_calls", None) or []:
         started_at = time.perf_counter()
@@ -100,7 +150,12 @@ async def secure_tool_node(
         status = "success"
 
         if definition is None:
-            result = {"ok": False, "error": "unknown_tool"}
+            result = ToolResult.failure(
+                error_code="unknown_tool",
+                message="The requested tool is not available.",
+            )
+            error_code = result.error_code
+            error_message = result.message
             status = "error"
             _log_authorization(
                 context,
@@ -109,7 +164,12 @@ async def secure_tool_node(
                 started_at,
             )
         elif not isinstance(arguments, dict):
-            result = {"ok": False, "error": "invalid_arguments"}
+            result = ToolResult.failure(
+                error_code="invalid_tool_arguments",
+                message="The tool arguments were invalid.",
+            )
+            error_code = result.error_code
+            error_message = result.message
             status = "error"
         else:
             try:
@@ -118,7 +178,12 @@ async def secure_tool_node(
                     arguments,
                 )
             except (ValidationError, ValueError, TypeError):
-                result = {"ok": False, "error": "invalid_arguments"}
+                result = ToolResult.failure(
+                    error_code="invalid_tool_arguments",
+                    message="The tool arguments were invalid.",
+                )
+                error_code = result.error_code
+                error_message = result.message
                 status = "error"
             else:
                 try:
@@ -127,12 +192,30 @@ async def secure_tool_node(
                             context.role,
                             definition.permission,
                         )
-                    result = definition.function(
-                        context=context,
-                        **validated_arguments,
+                    operation = lambda: invoke(
+                        definition,
+                        validated_arguments,
+                        context,
                     )
-                    if inspect.isawaitable(result):
-                        result = await result
+                    if definition.retry_safe:
+                        max_retries = (
+                            TOOL_MAX_RETRIES
+                            if inspect.iscoroutinefunction(definition.function)
+                            else DATABASE_MAX_RETRIES
+                        )
+                        raw_result = await retry_async(
+                            operation,
+                            max_retries=max_retries,
+                            retry_on=(
+                                DatabaseUnavailableError,
+                                ToolTimeoutError,
+                            ),
+                            operation_name=f"tool:{tool_name}",
+                            request_id=context.request_id,
+                            on_retry=record_retry,
+                        )
+                    else:
+                        raw_result = await operation()
                     if definition.requires_approval:
                         _log_authorization(
                             context,
@@ -145,13 +228,13 @@ async def secure_tool_node(
                             "user_id=%s action_id=%s action_type=%s",
                             context.request_id,
                             context.user_id,
-                            result["action_id"],
-                            result["action_type"],
+                            raw_result["action_id"],
+                            raw_result["action_type"],
                             extra={
                                 "request_id": context.request_id,
                                 "user_id": context.user_id,
-                                "action_id": result["action_id"],
-                                "action_type": result["action_type"],
+                                "action_id": raw_result["action_id"],
+                                "action_type": raw_result["action_type"],
                             },
                         )
                         return {
@@ -160,35 +243,84 @@ async def secure_tool_node(
                                 *state["current_turn_tools"],
                                 *executed_tools,
                             ],
-                            "pending_action": result,
+                            "pending_action": raw_result,
                             "pending_tool_call_id": call_id,
                             "approval_status": "pending",
                         }
+                    result = ToolResult.success(raw_result)
                 except AuthorizationError:
-                    result = {"ok": False, "error": "permission_denied"}
+                    error = PermissionDeniedError()
+                    result = failure_result(error)
                     status = "error"
+                    error_code = result.error_code
+                    error_message = result.message
                     _log_authorization(
                         context,
                         tool_name,
                         "DENIED",
                         started_at,
                     )
-                except Exception as exc:
+                except (DatabaseUnavailableError, ToolTimeoutError) as exc:
+                    result = failure_result(exc)
+                    status = "error"
+                    error_code = result.error_code
+                    error_message = (
+                        "I couldn't verify the current transaction because "
+                        "the transaction service is temporarily unavailable."
+                        if isinstance(exc, DatabaseUnavailableError)
+                        and tool_name == "get_transaction"
+                        else result.message
+                    )
                     _log_authorization(
                         context,
                         tool_name,
                         "ALLOWED",
                         started_at,
                     )
-                    logger.error(
-                        "Secure tool execution failed request_id=%s tool=%s "
-                        "error_type=%s",
+                except BusinessRuleError as exc:
+                    result = failure_result(exc)
+                    status = "error"
+                    error_code = result.error_code
+                    error_message = result.message
+                    _log_authorization(
+                        context,
+                        tool_name,
+                        "ALLOWED",
+                        started_at,
+                    )
+                except (ValueError, TypeError):
+                    result = ToolResult.failure(
+                        error_code="invalid_tool_arguments",
+                        message="The tool arguments were invalid.",
+                    )
+                    status = "error"
+                    error_code = result.error_code
+                    error_message = result.message
+                    _log_authorization(
+                        context,
+                        tool_name,
+                        "ALLOWED",
+                        started_at,
+                    )
+                except Exception:
+                    _log_authorization(
+                        context,
+                        tool_name,
+                        "ALLOWED",
+                        started_at,
+                    )
+                    logger.exception(
+                        "Unexpected tool failure request_id=%s tool=%s",
                         context.request_id,
                         tool_name,
-                        type(exc).__name__,
                     )
-                    result = {"ok": False, "error": "tool_execution_failed"}
+                    result = ToolResult.failure(
+                        error_code="internal_error",
+                        message="The operation could not be completed.",
+                    )
                     status = "error"
+                    error_code = result.error_code
+                    error_message = result.message
                 else:
                     executed_tools.append(tool_name)
                     _log_authorization(
@@ -199,16 +331,28 @@ async def secure_tool_node(
                     )
 
         tool_messages.append(ToolMessage(
-            content=json.dumps(result, default=str),
+            content=json.dumps(
+                result.model_dump(mode="json")
+                if isinstance(result, ToolResult)
+                else result,
+                default=str,
+            ),
             tool_call_id=call_id,
             name=tool_name or "unknown_tool",
             status=status,
         ))
 
-    return {
+    response = {
         "messages": tool_messages,
         "current_turn_tools": [
             *state["current_turn_tools"],
             *executed_tools,
         ],
+        "retry_count": retry_count,
     }
+    if error_code is not None:
+        response.update({
+            "error_code": error_code,
+            "error_message": error_message,
+        })
+    return response

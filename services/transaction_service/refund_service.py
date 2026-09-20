@@ -4,6 +4,10 @@ from uuid import uuid4
 from ai.schemas.actions import RefundProposal
 from services.transaction_service.identifiers import normalize_transaction_id
 from services.transaction_service.service import find_transaction
+from services.transaction_service.exceptions import (
+    RefundNotAllowedError,
+    TransactionNotFoundError,
+)
 
 
 def prepare_refund_proposal(
@@ -15,13 +19,13 @@ def prepare_refund_proposal(
     result = find_transaction(normalize_transaction_id(transaction_id))
 
     if not result["found"]:
-        raise ValueError("Transaction unavailable")
+        raise TransactionNotFoundError("Transaction unavailable")
 
     transaction = result["transaction"]
     if transaction["status"] == "refunded":
-        raise ValueError("Transaction is already refunded")
+        raise RefundNotAllowedError("Transaction is already refunded")
     if transaction["status"] != "completed":
-        raise ValueError("Transaction is not eligible for refund")
+        raise RefundNotAllowedError("Transaction is not eligible for refund")
 
     return RefundProposal(
         action_id=str(uuid4()),

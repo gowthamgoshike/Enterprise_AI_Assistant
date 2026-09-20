@@ -169,8 +169,11 @@ def test_secure_node_discards_model_supplied_identity(monkeypatch):
     )))
 
     assert json.loads(result["messages"][0].content) == {
-        "count": 0,
-        "transactions": [],
+        "ok": True,
+        "data": {"count": 0, "transactions": []},
+        "error_code": None,
+        "message": None,
+        "retryable": False,
     }
     assert result["messages"][0].status == "success"
     assert result["current_turn_tools"] == ["get_my_transactions"]
@@ -246,7 +249,10 @@ def test_prompt_injection_cannot_bypass_customer_analytics_denial(
 
     assert json.loads(result["messages"][0].content) == {
         "ok": False,
-        "error": "permission_denied",
+        "data": None,
+        "error_code": "permission_denied",
+        "message": "You are not authorized to perform this action.",
+        "retryable": False,
     }
     assert result["messages"][0].status == "error"
     assert result["current_turn_tools"] == []
@@ -329,7 +335,10 @@ def test_secure_node_never_executes_unknown_tool():
 
     assert json.loads(result["messages"][0].content) == {
         "ok": False,
-        "error": "unknown_tool",
+        "data": None,
+        "error_code": "unknown_tool",
+        "message": "The requested tool is not available.",
+        "retryable": False,
     }
     assert result["messages"][0].status == "error"
 
@@ -356,6 +365,10 @@ def test_secure_node_hides_raw_execution_errors(monkeypatch, caplog):
 
     assert json.loads(result["messages"][0].content) == {
         "ok": False,
-        "error": "tool_execution_failed",
+        "data": None,
+        "error_code": "internal_error",
+        "message": "The operation could not be completed.",
+        "retryable": False,
     }
-    assert "private database credentials" not in caplog.text
+    assert "private database credentials" not in result["messages"][0].content
+    assert "private database credentials" in caplog.text

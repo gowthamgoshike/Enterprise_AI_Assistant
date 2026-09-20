@@ -1,6 +1,7 @@
 from sqlalchemy import text
 
 from data.database.connection import engine
+from data.database.reliability import translate_database_errors
 
 
 UPSERT_TRANSACTION = text("""
@@ -96,49 +97,53 @@ GET_TRANSACTIONS_BY_CUSTOMER = text("""
 
 
 def upsert_transaction(transaction: dict) -> None:
-    with engine.begin() as connection:
-        connection.execute(UPSERT_TRANSACTION, transaction)
+    with translate_database_errors():
+        with engine.begin() as connection:
+            connection.execute(UPSERT_TRANSACTION, transaction)
 
 
 def get_transaction(transaction_id: str) -> dict | None:
-    with engine.connect() as connection:
-        result = connection.execute(
-            GET_TRANSACTION,
-            {"transaction_id": transaction_id},
-        )
-        row = result.mappings().first()
-        return dict(row) if row else None
+    with translate_database_errors():
+        with engine.connect() as connection:
+            result = connection.execute(
+                GET_TRANSACTION,
+                {"transaction_id": transaction_id},
+            )
+            row = result.mappings().first()
+            return dict(row) if row else None
 
 
 def find_customer_transaction(
     transaction_id: str,
     customer_id: str,
 ) -> dict | None:
-    with engine.connect() as connection:
-        result = connection.execute(
-            FIND_CUSTOMER_TRANSACTION,
-            {
-                "transaction_id": transaction_id,
-                "customer_id": customer_id,
-            },
-        )
-        row = result.mappings().first()
-        return dict(row) if row else None
+    with translate_database_errors():
+        with engine.connect() as connection:
+            result = connection.execute(
+                FIND_CUSTOMER_TRANSACTION,
+                {
+                    "transaction_id": transaction_id,
+                    "customer_id": customer_id,
+                },
+            )
+            row = result.mappings().first()
+            return dict(row) if row else None
 
 
 def get_transactions_by_customer(
     customer_id: str,
     limit: int = 20,
 ) -> list[dict]:
-    with engine.connect() as connection:
-        result = connection.execute(
-            GET_TRANSACTIONS_BY_CUSTOMER,
-            {
-                "customer_id": customer_id,
-                "limit": limit,
-            },
-        )
-        return [dict(row) for row in result.mappings()]
+    with translate_database_errors():
+        with engine.connect() as connection:
+            result = connection.execute(
+                GET_TRANSACTIONS_BY_CUSTOMER,
+                {
+                    "customer_id": customer_id,
+                    "limit": limit,
+                },
+            )
+            return [dict(row) for row in result.mappings()]
 
 
 # Backwards-compatible name for callers written before the scoped tool flow.

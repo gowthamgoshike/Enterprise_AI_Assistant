@@ -32,11 +32,17 @@ from ai.graphs.tool_agent_graph import (
 from apps.api.services.llm_service import (
     OLLAMA_MODEL,
 )
+from core.errors import ModelUnavailableError
 
 
 logger = logging.getLogger(
     __name__
 )
+RETRYABLE_ERROR_CODES = {
+    "model_unavailable",
+    "database_unavailable",
+    "tool_timeout",
+}
 
 
 def _get_approval_request(result: dict) -> dict | None:
@@ -70,6 +76,8 @@ def _chat_response_from_result(
 
     messages = result["messages"]
     response_text = messages[-1].text
+    error_code = result.get("error_code")
+    retryable = error_code in RETRYABLE_ERROR_CODES
     return ChatResponse(
         request_id=request_id,
         response=response_text,
@@ -78,7 +86,12 @@ def _chat_response_from_result(
         tools_used=tools_used,
         route=result.get("route"),
         route_confidence=result.get("route_confidence"),
-        agent_action=("tool" if tools_used else "respond"),
+        status=("degraded" if retryable else "failed") if error_code else "completed",
+        agent_action=(
+            "error" if error_code else ("tool" if tools_used else "respond")
+        ),
+        error_code=error_code,
+        retryable=retryable,
     )
 
 
@@ -130,6 +143,8 @@ async def stream_chat(
             "route_confidence": result.route_confidence,
             "status": result.status,
             "approval_request": result.approval_request,
+            "error_code": result.error_code,
+            "retryable": result.retryable,
         }) + "\n"
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
@@ -210,6 +225,18 @@ async def chat(
             status_code=504,
             detail="Model request timed out",
         ) from exc
+
+    except ModelUnavailableError as exc:
+        return ChatResponse(
+            request_id=request_id,
+            response=exc.safe_message,
+            status="degraded",
+            model=OLLAMA_MODEL,
+            latency_seconds=round(time.perf_counter() - start, 3),
+            agent_action="error",
+            error_code=exc.code,
+            retryable=True,
+        )
 
     except httpx.HTTPError as exc:
 

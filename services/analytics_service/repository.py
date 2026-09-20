@@ -1,6 +1,7 @@
 from sqlalchemy import text
 
 from data.database.connection import engine
+from data.database.reliability import translate_database_errors
 
 
 TOP_PRODUCTS_QUERY = text("""
@@ -50,7 +51,7 @@ def get_top_products(
     limit: int = 5,
 ) -> list[dict]:
 
-    with engine.connect() as connection:
+    with translate_database_errors(), engine.connect() as connection:
 
         result = connection.execute(
             TOP_PRODUCTS_QUERY,
@@ -68,7 +69,7 @@ def get_top_products(
 
 def get_revenue_summary() -> dict:
 
-    with engine.connect() as connection:
+    with translate_database_errors(), engine.connect() as connection:
 
         result = connection.execute(
             REVENUE_SUMMARY_QUERY
@@ -85,7 +86,7 @@ def get_revenue_summary() -> dict:
 
 def get_transaction_metrics() -> list[dict]:
 
-    with engine.connect() as connection:
+    with translate_database_errors(), engine.connect() as connection:
 
         result = connection.execute(
             TRANSACTION_METRICS_QUERY

@@ -1,8 +1,13 @@
 import json
+import asyncio
 
 from langchain_core.messages import ToolMessage
 
 from ai.schemas.graph_state import EnterpriseAgentState
+from ai.schemas.tool_result import ToolResult
+from core.config import DATABASE_MAX_RETRIES
+from core.errors import DatabaseUnavailableError
+from core.retry import retry_async
 from services.auth_service.authorization_service import require_permission
 from services.auth_service.exceptions import AuthorizationError
 from services.auth_service.models import UserRole
@@ -20,14 +25,17 @@ def _failed_execution(
     *,
     error: str,
     message: str,
+    retryable: bool = False,
+    retry_count: int | None = None,
 ) -> dict:
+    tool_result = ToolResult.failure(
+        error_code=error,
+        message=message,
+        retryable=retryable,
+    )
     return {
         "messages": [ToolMessage(
-            content=json.dumps({
-                "ok": False,
-                "error": error,
-                "message": message,
-            }),
+            content=json.dumps(tool_result.model_dump(mode="json")),
             tool_call_id=state["pending_tool_call_id"],
             name="propose_refund",
             status="error",
@@ -40,24 +48,48 @@ def _failed_execution(
         "pending_action": None,
         "pending_tool_call_id": None,
         "approval_status": "approved",
+        "error_code": error,
+        "error_message": message,
+        "retry_count": (
+            state.get("retry_count", 0)
+            if retry_count is None
+            else retry_count
+        ),
     }
 
 
 async def execute_refund_node(state: EnterpriseAgentState) -> dict:
     """Execute an approved refund using the checkpointed proposal identity."""
+    retries = 0
+
+    def record_retry(_attempt: int, _delay: float, _error: Exception) -> None:
+        nonlocal retries
+        retries += 1
+
     try:
         require_permission(
             UserRole(state["user_role"]),
             Permission.EXECUTE_REFUND,
         )
         proposal = state["pending_action"]
-        result = execute_refund(
-            action_id=proposal["action_id"],
-            transaction_id=proposal["transaction_id"],
-            reason=proposal["reason"],
-            requested_by=proposal["requested_by"],
-            approved_by=state["user_id"],
+        # Every attempt reuses the exact checkpointed action_id. The database
+        # uniqueness constraint therefore makes an uncertain post-commit retry
+        # return already_completed instead of creating a second refund.
+        result = await retry_async(
+            lambda: asyncio.to_thread(
+                execute_refund,
+                action_id=proposal["action_id"],
+                transaction_id=proposal["transaction_id"],
+                reason=proposal["reason"],
+                requested_by=proposal["requested_by"],
+                approved_by=state["user_id"],
+                request_id=state["request_id"],
+            ),
+            max_retries=DATABASE_MAX_RETRIES,
+            retry_on=(DatabaseUnavailableError,),
+            operation_name="execute_refund",
             request_id=state["request_id"],
+            on_retry=record_retry,
         )
     except AuthorizationError:
         return _failed_execution(
@@ -68,8 +100,8 @@ async def execute_refund_node(state: EnterpriseAgentState) -> dict:
     except TransactionNotFoundError:
         return _failed_execution(
             state,
-            error="transaction_unavailable",
-            message="Transaction unavailable",
+            error="transaction_not_found",
+            message="The transaction was not found.",
         )
     except RefundNotAllowedError as exc:
         return _failed_execution(
@@ -83,14 +115,24 @@ async def execute_refund_node(state: EnterpriseAgentState) -> dict:
             error="refund_execution_failed",
             message="Refund execution failed",
         )
+    except DatabaseUnavailableError as exc:
+        return _failed_execution(
+            state,
+            error=exc.code,
+            message=(
+                "The refund service is temporarily unavailable. "
+                "The operation's current status could not be confirmed."
+            ),
+            retryable=True,
+            retry_count=state.get("retry_count", 0) + retries,
+        )
 
-    tool_result = {
-        "ok": True,
+    tool_result = ToolResult.success({
         "refund": result.model_dump(mode="json"),
-    }
+    })
     return {
         "messages": [ToolMessage(
-            content=json.dumps(tool_result, default=str),
+            content=json.dumps(tool_result.model_dump(mode="json"), default=str),
             tool_call_id=state["pending_tool_call_id"],
             name="propose_refund",
             status="success",
@@ -103,4 +145,7 @@ async def execute_refund_node(state: EnterpriseAgentState) -> dict:
         "pending_action": None,
         "pending_tool_call_id": None,
         "approval_status": "approved",
+        "error_code": None,
+        "error_message": None,
+        "retry_count": state.get("retry_count", 0) + retries,
     }

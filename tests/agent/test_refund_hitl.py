@@ -121,7 +121,7 @@ def test_approve_interrupt_executes_refund(monkeypatch):
     assert proposal["transaction_id"] == "TX-HITL-TEST"
     assert proposal["amount_cents"] == 2500
     result = approval_result(resumed)
-    assert result["refund"]["status"] == "completed"
+    assert result["data"]["refund"]["status"] == "completed"
     assert execution_calls[0]["action_id"] == proposal["action_id"]
     assert resumed["current_turn_tools"] == [
         "propose_refund",
@@ -188,8 +188,10 @@ def test_state_change_during_approval_is_rejected(monkeypatch):
     result = approval_result(resumed)
     assert result == {
         "ok": False,
-        "error": "refund_not_allowed",
+        "data": None,
+        "error_code": "refund_not_allowed",
         "message": "Transaction is no longer eligible for refund",
+        "retryable": False,
     }
     assert transaction["status"] == "refunded"
     assert resumed["current_turn_tools"] == [

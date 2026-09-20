@@ -26,3 +26,6 @@ class EnterpriseAgentState(MessagesState):
     pending_tool_call_id: str | None
     approval_status: str | None
     error: str | None
+    error_code: str | None
+    error_message: str | None
+    retry_count: int

@@ -1,4 +1,7 @@
+from core.errors import InvalidModelOutputError
+
+
 class AgentDecisionError(
-    Exception
+    InvalidModelOutputError
 ):
     pass
