@@ -10,6 +10,8 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.graphs import tool_agent_graph
 from ai.nodes import secure_tool_node as secure_node_module
+from ai.nodes import refund_execution_node
+from ai.schemas.actions import RefundExecutionResult
 from ai.tools.secure_registry import ToolDefinition
 from services.auth_service.models import UserRole
 from services.auth_service.permissions import Permission
@@ -181,10 +183,15 @@ def test_secure_node_denies_customer_refund_before_executor(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("approved", "expected_status", "tool_status"),
+    ("approved", "expected_status", "tool_status", "expected_tools"),
     [
-        (True, "approved_for_execution", "success"),
-        (False, "rejected_by_human", "error"),
+        (
+            True,
+            "completed",
+            "success",
+            ["propose_refund", "execute_refund"],
+        ),
+        (False, "rejected_by_human", "error", ["propose_refund"]),
     ],
 )
 def test_graph_interrupts_and_resumes_approval(
@@ -193,6 +200,7 @@ def test_graph_interrupts_and_resumes_approval(
     approved,
     expected_status,
     tool_status,
+    expected_tools,
 ):
     executor = Mock(return_value=trusted_proposal())
     monkeypatch.setitem(
@@ -211,6 +219,15 @@ def test_graph_interrupts_and_resumes_approval(
         AIMessage(content="The approval decision was recorded."),
     ]
     monkeypatch.setattr(tool_agent_graph, "model_with_tools", model)
+    execution = Mock(return_value=RefundExecutionResult(
+        action_id="ACTION-1",
+        refund_id="REFUND-1",
+        transaction_id="TX-123",
+        status="completed",
+        amount_cents=8745,
+        currency="USD",
+    ))
+    monkeypatch.setattr(refund_execution_node, "execute_refund", execution)
     compiled = tool_agent_graph.build_enterprise_tool_graph(InMemorySaver())
 
     async def run_workflow():
@@ -240,14 +257,25 @@ def test_graph_interrupts_and_resumes_approval(
         message for message in resumed["messages"]
         if isinstance(message, ToolMessage)
     )
-    assert json.loads(tool_message.content)["status"] == expected_status
+    tool_payload = json.loads(tool_message.content)
+    actual_status = (
+        tool_payload["refund"]["status"]
+        if approved
+        else tool_payload["status"]
+    )
+    assert actual_status == expected_status
     assert tool_message.status == tool_status
     assert resumed["approval_status"] == (
         "approved" if approved else "rejected"
     )
     assert resumed["pending_action"] is None
-    assert resumed["current_turn_tools"] == ["propose_refund"]
+    assert resumed["current_turn_tools"] == expected_tools
     executor.assert_called_once()
+    if approved:
+        execution.assert_called_once()
+        assert execution.call_args.kwargs["action_id"] == "ACTION-1"
+    else:
+        execution.assert_not_called()
     decision_record = next(
         record for record in caplog.records
         if record.msg.startswith("human_approval_resolved")
@@ -280,3 +308,27 @@ def test_resume_rejects_session_without_pending_interrupt():
         ))
 
     compiled.ainvoke.assert_not_awaited()
+
+
+def test_resume_retries_failed_approved_execution():
+    failed_task = SimpleNamespace(
+        name="execute_refund",
+        error="database unavailable",
+        interrupts=(),
+    )
+    compiled = AsyncMock()
+    compiled.aget_state.return_value = SimpleNamespace(
+        tasks=(failed_task,),
+        next=("execute_refund",),
+        values={"approval_status": "approved"},
+    )
+    compiled.ainvoke.return_value = {"messages": []}
+
+    result = asyncio.run(tool_agent_graph.resume_agent_graph(
+        "THREAD-failed-execution",
+        {"approved": True},
+        graph=compiled,
+    ))
+
+    assert result == {"messages": []}
+    assert compiled.ainvoke.await_args.args[0] is None

@@ -7,8 +7,10 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
 
 from ai.graphs import tool_agent_graph
+from ai.nodes import refund_execution_node
+from ai.schemas.actions import RefundExecutionResult
 from services.transaction_service import refund_service
-from services.transaction_service import repository as transaction_repository
+from services.transaction_service.exceptions import RefundNotAllowedError
 
 
 def completed_transaction() -> dict:
@@ -43,13 +45,22 @@ def run_refund_workflow(monkeypatch, *, approved: bool):
         "found": True,
         "transaction": transaction,
     })
-    database_write = Mock()
     monkeypatch.setattr(refund_service, "find_transaction", lookup)
-    monkeypatch.setattr(
-        transaction_repository,
-        "upsert_transaction",
-        database_write,
-    )
+    execution_calls = []
+
+    def execute(**kwargs):
+        execution_calls.append(kwargs)
+        transaction["status"] = "refunded"
+        return RefundExecutionResult(
+            action_id=kwargs["action_id"],
+            refund_id="00000000-0000-0000-0000-000000000002",
+            transaction_id=kwargs["transaction_id"],
+            status="completed",
+            amount_cents=transaction["amount_cents"],
+            currency=transaction["currency"],
+        )
+
+    monkeypatch.setattr(refund_execution_node, "execute_refund", execute)
 
     model = AsyncMock()
     model.ainvoke.side_effect = [
@@ -71,7 +82,6 @@ def run_refund_workflow(monkeypatch, *, approved: bool):
         )
         assert interrupted["__interrupt__"]
         assert transaction == original_transaction
-        database_write.assert_not_called()
 
         resumed = await tool_agent_graph.resume_agent_graph(
             thread_id="THREAD-HITL",
@@ -81,10 +91,14 @@ def run_refund_workflow(monkeypatch, *, approved: bool):
         return interrupted, resumed
 
     interrupted, resumed = asyncio.run(run())
-    assert transaction == original_transaction
-    database_write.assert_not_called()
+    if approved:
+        assert transaction["status"] == "refunded"
+        assert len(execution_calls) == 1
+    else:
+        assert transaction == original_transaction
+        assert execution_calls == []
     lookup.assert_called_once_with("TX-HITL-TEST")
-    return interrupted, resumed
+    return interrupted, resumed, execution_calls
 
 
 def approval_result(resumed: dict) -> dict:
@@ -97,8 +111,8 @@ def approval_result(resumed: dict) -> dict:
     return json.loads(message.content)
 
 
-def test_approve_interrupt_does_not_change_transaction(monkeypatch):
-    interrupted, resumed = run_refund_workflow(
+def test_approve_interrupt_executes_refund(monkeypatch):
+    interrupted, resumed, execution_calls = run_refund_workflow(
         monkeypatch,
         approved=True,
     )
@@ -106,12 +120,18 @@ def test_approve_interrupt_does_not_change_transaction(monkeypatch):
     proposal = interrupted["__interrupt__"][0].value["action"]
     assert proposal["transaction_id"] == "TX-HITL-TEST"
     assert proposal["amount_cents"] == 2500
-    assert approval_result(resumed)["status"] == "approved_for_execution"
+    result = approval_result(resumed)
+    assert result["refund"]["status"] == "completed"
+    assert execution_calls[0]["action_id"] == proposal["action_id"]
+    assert resumed["current_turn_tools"] == [
+        "propose_refund",
+        "execute_refund",
+    ]
     assert resumed["approval_status"] == "approved"
 
 
 def test_reject_interrupt_does_not_change_transaction(monkeypatch):
-    interrupted, resumed = run_refund_workflow(
+    interrupted, resumed, execution_calls = run_refund_workflow(
         monkeypatch,
         approved=False,
     )
@@ -121,3 +141,58 @@ def test_reject_interrupt_does_not_change_transaction(monkeypatch):
     )
     assert approval_result(resumed)["status"] == "rejected_by_human"
     assert resumed["approval_status"] == "rejected"
+    assert execution_calls == []
+
+
+def test_state_change_during_approval_is_rejected(monkeypatch):
+    transaction = completed_transaction()
+    monkeypatch.setattr(refund_service, "find_transaction", Mock(
+        return_value={"found": True, "transaction": transaction},
+    ))
+
+    def execute(**_kwargs):
+        if transaction["status"] != "completed":
+            raise RefundNotAllowedError(
+                "Transaction is no longer eligible for refund"
+            )
+        raise AssertionError("The changed transaction must not be refunded")
+
+    monkeypatch.setattr(refund_execution_node, "execute_refund", execute)
+    model = AsyncMock()
+    model.ainvoke.side_effect = [
+        refund_tool_call(),
+        AIMessage(content="The transaction is no longer eligible for refund."),
+    ]
+    monkeypatch.setattr(tool_agent_graph, "model_with_tools", model)
+    graph = tool_agent_graph.build_enterprise_tool_graph(InMemorySaver())
+
+    async def run():
+        interrupted = await tool_agent_graph.run_agent_graph(
+            user_message="Refund TX-HITL-TEST because it was duplicated.",
+            request_id="REQ-TOCTOU",
+            thread_id="THREAD-TOCTOU",
+            graph=graph,
+            user_id="USER-ADMIN-1",
+            user_role="ADMIN",
+            customer_id=None,
+        )
+        assert interrupted["__interrupt__"]
+        transaction["status"] = "refunded"
+        return await tool_agent_graph.resume_agent_graph(
+            thread_id="THREAD-TOCTOU",
+            approval={"approved": True, "comment": "Reviewed"},
+            graph=graph,
+        )
+
+    resumed = asyncio.run(run())
+    result = approval_result(resumed)
+    assert result == {
+        "ok": False,
+        "error": "refund_not_allowed",
+        "message": "Transaction is no longer eligible for refund",
+    }
+    assert transaction["status"] == "refunded"
+    assert resumed["current_turn_tools"] == [
+        "propose_refund",
+        "execute_refund",
+    ]

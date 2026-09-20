@@ -30,3 +30,4 @@ def test_only_admin_sees_refund_proposal_tool():
     assert "propose_refund" in tool_names(UserRole.ADMIN)
     assert "propose_refund" not in tool_names(UserRole.ANALYST)
     assert "propose_refund" not in tool_names(UserRole.CUSTOMER)
+    assert "execute_refund" not in tool_names(UserRole.ADMIN)

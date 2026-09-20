@@ -18,3 +18,15 @@ class RefundProposal(BaseModel):
 class ApprovalDecision(BaseModel):
     approved: bool
     comment: str | None = None
+
+
+class RefundExecutionResult(BaseModel):
+    action_id: str
+    refund_id: str
+    transaction_id: str
+    status: Literal[
+        "completed",
+        "already_completed",
+    ]
+    amount_cents: int
+    currency: str

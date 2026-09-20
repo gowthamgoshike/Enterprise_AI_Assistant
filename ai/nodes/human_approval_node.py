@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def human_approval_node(
     state: EnterpriseAgentState,
-) -> Command[Literal["action_approved", "action_rejected"]]:
+) -> Command[Literal["execute_refund", "action_rejected"]]:
     """Pause the graph and route only after a validated human decision."""
     decision = interrupt({
         "type": "action_approval",
@@ -43,7 +43,7 @@ def human_approval_node(
     if approval.approved:
         return Command(
             update={"approval_status": "approved"},
-            goto="action_approved",
+            goto="execute_refund",
         )
     return Command(
         update={"approval_status": "rejected"},

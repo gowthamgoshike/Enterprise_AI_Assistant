@@ -9,6 +9,7 @@ class Permission(str, Enum):
     READ_ANALYTICS = "read_analytics"
     READ_REVENUE = "read_revenue"
     PROPOSE_REFUND = "propose_refund"
+    EXECUTE_REFUND = "execute_refund"
     ADMIN_ACCESS = "admin_access"
 
 
@@ -26,6 +27,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.READ_ANALYTICS,
         Permission.READ_REVENUE,
         Permission.PROPOSE_REFUND,
+        Permission.EXECUTE_REFUND,
         Permission.ADMIN_ACCESS,
     },
 }

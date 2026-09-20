@@ -291,7 +291,7 @@ if pending_approval:
             else:
                 st.session_state.pending_approval = None
                 final_response = approval_result.get("response") or (
-                    "The refund proposal was approved for future execution."
+                    "The approved refund was executed successfully."
                     if approve_clicked
                     else "The refund proposal was rejected."
                 )
