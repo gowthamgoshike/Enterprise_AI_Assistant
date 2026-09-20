@@ -34,6 +34,12 @@ from apps.api.services.llm_service import (
     OLLAMA_MODEL,
 )
 from core.errors import ModelUnavailableError
+from core.observability.context import (
+    get_request_id,
+    set_request_context,
+    set_user_context,
+)
+from core.observability.metrics import AGENT_ERRORS_TOTAL
 from data.database.reliability import is_database_unavailable_error
 
 
@@ -199,18 +205,23 @@ async def chat(
         get_current_user
     ),
 ):
-    request_id = str(uuid.uuid4())
+    context_request_id = get_request_id()
+    request_id = context_request_id or f"REQ-{uuid.uuid4()}"
+    if context_request_id is None:
+        set_request_context(request_id, current_user.user_id)
+    else:
+        set_user_context(current_user.user_id)
     start = time.perf_counter()
 
     try:
         logger.info(
-            "agent_request request_id=%s thread_id=%s message_length=%d",
-            request_id,
-            payload.session_id,
-            len(payload.messages[-1].content),
+            "agent_request_started",
             extra={
+                "event": "agent_request",
                 "request_id": request_id,
                 "thread_id": payload.session_id,
+                "status": "started",
+                "role": current_user.role.value,
                 "message_length": len(payload.messages[-1].content),
             },
         )
@@ -235,8 +246,13 @@ async def chat(
         )
 
         logger.info(
-            "chat_request_completed latency=%.3f",
-            latency,
+            "agent_request_completed",
+            extra={
+                "event": "agent_request",
+                "status": "success",
+                "role": current_user.role.value,
+                "latency_ms": round(latency * 1000, 2),
+            },
         )
 
         return _chat_response_from_result(
@@ -246,6 +262,7 @@ async def chat(
         )
 
     except GraphRecursionError as exc:
+        AGENT_ERRORS_TOTAL.labels(error_code="agent_step_limit").inc()
         logger.warning("request_id=%s error=agent_step_limit", request_id)
         raise HTTPException(
             status_code=503,
@@ -260,6 +277,7 @@ async def chat(
         ) from exc
 
     except ModelUnavailableError as exc:
+        AGENT_ERRORS_TOTAL.labels(error_code=exc.code).inc()
         return ChatResponse(
             request_id=request_id,
             response=exc.safe_message,
@@ -280,6 +298,7 @@ async def chat(
 
     except Exception as exc:
         if is_database_unavailable_error(exc):
+            AGENT_ERRORS_TOTAL.labels(error_code="database_unavailable").inc()
             logger.warning(
                 "Agent database unavailable request_id=%s error_type=%s",
                 request_id,
@@ -294,6 +313,7 @@ async def chat(
                 started_at=start,
                 user_message=payload.messages[-1].content,
             )
+        AGENT_ERRORS_TOTAL.labels(error_code="internal_error").inc()
         logger.exception(
             "Agent graph execution failed request_id=%s", request_id,
             extra={"request_id": request_id},
@@ -313,7 +333,12 @@ async def submit_approval(
     request: Request,
     current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    request_id = str(uuid.uuid4())
+    context_request_id = get_request_id()
+    request_id = context_request_id or f"REQ-{uuid.uuid4()}"
+    if context_request_id is None:
+        set_request_context(request_id, current_user.user_id)
+    else:
+        set_user_context(current_user.user_id)
     start = time.perf_counter()
     thread_id = f"{current_user.user_id}:{payload.session_id}"
 
@@ -332,6 +357,7 @@ async def submit_approval(
             latency_seconds=time.perf_counter() - start,
         )
     except GraphRecursionError as exc:
+        AGENT_ERRORS_TOTAL.labels(error_code="agent_step_limit").inc()
         raise HTTPException(
             status_code=503,
             detail="The assistant reached its execution limit.",
@@ -353,6 +379,7 @@ async def submit_approval(
         ) from exc
     except Exception as exc:
         if is_database_unavailable_error(exc):
+            AGENT_ERRORS_TOTAL.labels(error_code="database_unavailable").inc()
             logger.warning(
                 "Approval database unavailable request_id=%s error_type=%s",
                 request_id,
@@ -367,6 +394,7 @@ async def submit_approval(
                 started_at=start,
                 refund_status_uncertain=True,
             )
+        AGENT_ERRORS_TOTAL.labels(error_code="internal_error").inc()
         logger.exception(
             "Approval resume failed request_id=%s",
             request_id,

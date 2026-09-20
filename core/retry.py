@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 from core.config import RETRY_BASE_DELAY_SECONDS, RETRY_MAX_DELAY_SECONDS
+from core.observability.metrics import RETRIES_TOTAL
 
 
 logger = logging.getLogger(__name__)
@@ -46,23 +47,19 @@ async def retry_async(
                 raise
             delay = calculate_backoff(attempt)
             logger.warning(
-                "operation_retry request_id=%s operation=%s attempt=%d "
-                "max_attempts=%d delay=%.3f error_code=%s",
-                request_id,
-                operation_name,
-                attempt + 2,
-                max_retries + 1,
-                delay,
-                getattr(exc, "code", type(exc).__name__),
+                "operation_retry",
                 extra={
+                    "event": "retry",
                     "request_id": request_id,
                     "operation": operation_name,
                     "attempt": attempt + 2,
                     "max_attempts": max_retries + 1,
                     "retry_delay": delay,
+                    "status": "retrying",
                     "error_code": getattr(exc, "code", type(exc).__name__),
                 },
             )
+            RETRIES_TOTAL.labels(operation=operation_name).inc()
             if on_retry is not None:
                 on_retry(attempt + 2, delay, exc)
             await asyncio.sleep(delay)

@@ -1,5 +1,7 @@
 from sqlalchemy import text
 
+from core.observability.timing import observe_database_query
+
 
 FIND_REFUND_BY_ACTION_ID = text("""
     SELECT
@@ -99,29 +101,34 @@ INSERT_AUDIT_LOG = text("""
 
 
 def find_refund_by_action_id(connection, action_id: str):
-    return connection.execute(
-        FIND_REFUND_BY_ACTION_ID,
-        {"action_id": action_id},
-    ).mappings().first()
+    with observe_database_query("find_refund_by_action_id"):
+        return connection.execute(
+            FIND_REFUND_BY_ACTION_ID,
+            {"action_id": action_id},
+        ).mappings().first()
 
 
 def find_transaction_for_update(connection, transaction_id: str):
-    return connection.execute(
-        FIND_TRANSACTION_FOR_UPDATE,
-        {"transaction_id": transaction_id},
-    ).mappings().first()
+    with observe_database_query("find_transaction_for_update"):
+        return connection.execute(
+            FIND_TRANSACTION_FOR_UPDATE,
+            {"transaction_id": transaction_id},
+        ).mappings().first()
 
 
 def insert_refund(connection, values: dict) -> bool:
-    return connection.execute(INSERT_REFUND, values).rowcount == 1
+    with observe_database_query("insert_refund"):
+        return connection.execute(INSERT_REFUND, values).rowcount == 1
 
 
 def mark_transaction_refunded(connection, transaction_id: str) -> int:
-    return connection.execute(
-        MARK_TRANSACTION_REFUNDED,
-        {"transaction_id": transaction_id},
-    ).rowcount
+    with observe_database_query("mark_transaction_refunded"):
+        return connection.execute(
+            MARK_TRANSACTION_REFUNDED,
+            {"transaction_id": transaction_id},
+        ).rowcount
 
 
 def insert_audit_log(connection, values: dict) -> None:
-    connection.execute(INSERT_AUDIT_LOG, values)
+    with observe_database_query("insert_audit_log"):
+        connection.execute(INSERT_AUDIT_LOG, values)

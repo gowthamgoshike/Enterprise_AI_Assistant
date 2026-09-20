@@ -2,6 +2,7 @@ from sqlalchemy import text
 
 from data.database.connection import engine
 from data.database.reliability import translate_database_errors
+from core.observability.timing import observe_database_query
 
 
 TOP_PRODUCTS_QUERY = text("""
@@ -51,7 +52,11 @@ def get_top_products(
     limit: int = 5,
 ) -> list[dict]:
 
-    with translate_database_errors(), engine.connect() as connection:
+    with (
+        observe_database_query("get_top_products"),
+        translate_database_errors(),
+        engine.connect() as connection,
+    ):
 
         result = connection.execute(
             TOP_PRODUCTS_QUERY,
@@ -69,7 +74,11 @@ def get_top_products(
 
 def get_revenue_summary() -> dict:
 
-    with translate_database_errors(), engine.connect() as connection:
+    with (
+        observe_database_query("get_revenue_summary"),
+        translate_database_errors(),
+        engine.connect() as connection,
+    ):
 
         result = connection.execute(
             REVENUE_SUMMARY_QUERY
@@ -86,7 +95,11 @@ def get_revenue_summary() -> dict:
 
 def get_transaction_metrics() -> list[dict]:
 
-    with translate_database_errors(), engine.connect() as connection:
+    with (
+        observe_database_query("get_transaction_metrics"),
+        translate_database_errors(),
+        engine.connect() as connection,
+    ):
 
         result = connection.execute(
             TRANSACTION_METRICS_QUERY

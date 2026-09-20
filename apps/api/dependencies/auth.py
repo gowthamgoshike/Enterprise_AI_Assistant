@@ -2,6 +2,7 @@ import jwt
 from fastapi import (
     Depends,
     HTTPException,
+    Request,
     status,
 )
 from fastapi.security import (
@@ -12,6 +13,7 @@ from fastapi.security import (
 from apps.api.schemas.auth import AuthenticatedUser
 from services.auth_service.jwt_service import decode_access_token
 from services.auth_service.repository import find_user_by_id
+from core.observability.context import set_user_context
 
 
 bearer_scheme = HTTPBearer()
@@ -21,6 +23,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(
         bearer_scheme
     ),
+    request: Request = None,
 ) -> AuthenticatedUser:
     token = credentials.credentials
 
@@ -59,9 +62,12 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return AuthenticatedUser(
+    authenticated_user = AuthenticatedUser(
         user_id=user["user_id"],
         email=user["email"],
         role=user["role"],
         customer_id=user["customer_id"],
     )
+    if request is not None:
+        set_user_context(authenticated_user.user_id)
+    return authenticated_user

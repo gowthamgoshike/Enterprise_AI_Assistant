@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -9,7 +9,9 @@ from ai.memory.postgres_checkpointer import get_checkpoint_database_url
 from fastapi.middleware.cors import (
     CORSMiddleware,
 )
-import apps.api.logging_config
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from apps.api.logging_config import configure_logging
+from apps.api.middleware.request_context import request_context_middleware
 from apps.api.routes.auth import (
     router as auth_router,
 )
@@ -20,6 +22,9 @@ from apps.api.routes.chat import (
 from apps.api.routes.health import (
     router as health_router,
 )
+
+
+configure_logging()
 
 
 @asynccontextmanager
@@ -55,6 +60,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.middleware("http")(request_context_middleware)
+
 
 @app.get("/")
 async def root():
@@ -65,6 +72,18 @@ async def root():
         "version":
             "0.1.0",
     }
+
+
+@app.get(
+    "/metrics",
+    tags=["Observability"],
+    summary="Get Prometheus metrics",
+)
+async def metrics():
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
 
 
 app.include_router(

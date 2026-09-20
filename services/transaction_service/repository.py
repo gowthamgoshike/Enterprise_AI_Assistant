@@ -2,6 +2,7 @@ from sqlalchemy import text
 
 from data.database.connection import engine
 from data.database.reliability import translate_database_errors
+from core.observability.timing import observe_database_query
 
 
 UPSERT_TRANSACTION = text("""
@@ -97,13 +98,13 @@ GET_TRANSACTIONS_BY_CUSTOMER = text("""
 
 
 def upsert_transaction(transaction: dict) -> None:
-    with translate_database_errors():
+    with observe_database_query("upsert_transaction"), translate_database_errors():
         with engine.begin() as connection:
             connection.execute(UPSERT_TRANSACTION, transaction)
 
 
 def get_transaction(transaction_id: str) -> dict | None:
-    with translate_database_errors():
+    with observe_database_query("get_transaction"), translate_database_errors():
         with engine.connect() as connection:
             result = connection.execute(
                 GET_TRANSACTION,
@@ -117,7 +118,10 @@ def find_customer_transaction(
     transaction_id: str,
     customer_id: str,
 ) -> dict | None:
-    with translate_database_errors():
+    with (
+        observe_database_query("find_customer_transaction"),
+        translate_database_errors(),
+    ):
         with engine.connect() as connection:
             result = connection.execute(
                 FIND_CUSTOMER_TRANSACTION,
@@ -134,7 +138,10 @@ def get_transactions_by_customer(
     customer_id: str,
     limit: int = 20,
 ) -> list[dict]:
-    with translate_database_errors():
+    with (
+        observe_database_query("get_transactions_by_customer"),
+        translate_database_errors(),
+    ):
         with engine.connect() as connection:
             result = connection.execute(
                 GET_TRANSACTIONS_BY_CUSTOMER,

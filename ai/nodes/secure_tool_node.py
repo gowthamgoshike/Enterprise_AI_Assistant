@@ -27,6 +27,11 @@ from core.errors import (
     ToolTimeoutError,
 )
 from core.retry import retry_async, run_with_timeout
+from core.observability.metrics import (
+    AUTHORIZATION_DENIALS_TOTAL,
+    TOOL_CALLS_TOTAL,
+    TOOL_LATENCY,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -71,6 +76,16 @@ def _log_authorization(
         if result == "DENIED"
         else "tool_authorization_allowed"
     )
+    if result == "DENIED":
+        capability = (
+            tool_name
+            if tool_name in SECURE_TOOL_REGISTRY
+            else "unknown_tool"
+        )
+        AUTHORIZATION_DENIALS_TOTAL.labels(
+            role=context.role.value,
+            capability=capability,
+        ).inc()
     log(
         "%s request_id=%s user_id=%s role=%s tool=%s "
         "authorization=%s latency=%.3f",
@@ -88,6 +103,29 @@ def _log_authorization(
             "tool": tool_name,
             "authorization_result": result,
             "authorization_latency": latency,
+        },
+    )
+
+
+def _record_tool_execution(
+    *,
+    tool_name: str,
+    status: str,
+    role: str,
+    started_at: float,
+) -> None:
+    duration_seconds = time.perf_counter() - started_at
+    metric_status = "success" if status == "success" else "failure"
+    TOOL_CALLS_TOTAL.labels(tool=tool_name, status=metric_status).inc()
+    TOOL_LATENCY.labels(tool=tool_name).observe(duration_seconds)
+    logger.info(
+        "tool_execution_completed",
+        extra={
+            "event": "tool_execution",
+            "tool": tool_name,
+            "status": metric_status,
+            "latency_ms": round(duration_seconds * 1000, 2),
+            "role": role,
         },
     )
 
@@ -237,6 +275,12 @@ async def secure_tool_node(
                                 "action_type": raw_result["action_type"],
                             },
                         )
+                        _record_tool_execution(
+                            tool_name=tool_name,
+                            status="success",
+                            role=context.role.value,
+                            started_at=started_at,
+                        )
                         return {
                             "messages": tool_messages,
                             "current_turn_tools": [
@@ -341,6 +385,16 @@ async def secure_tool_node(
             name=tool_name or "unknown_tool",
             status=status,
         ))
+        _record_tool_execution(
+            tool_name=(
+                tool_name
+                if definition is not None
+                else "unknown_tool"
+            ),
+            status=status,
+            role=context.role.value,
+            started_at=started_at,
+        )
 
     response = {
         "messages": tool_messages,

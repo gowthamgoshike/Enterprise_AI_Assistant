@@ -119,6 +119,7 @@ def test_chat_endpoints_use_graph(monkeypatch):
     )
     assert response.status_code == 200
     assert response.json()["request_id"] == calls[0]["request_id"]
+    assert response.headers["X-Request-ID"] == response.json()["request_id"]
     assert response.json()["response"] == "Revenue is 100."
     assert response.json()["model"] == "test-model"
     assert response.json()["latency_seconds"] >= 0

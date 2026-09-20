@@ -18,6 +18,7 @@ from services.auth_service.exceptions import AuthorizationError
 from services.auth_service.models import UserRole
 from services.auth_service.permissions import Permission
 from services.transaction_service import repository as transaction_repository
+from core.observability.metrics import AUTHORIZATION_DENIALS_TOTAL
 
 
 def state_for(role, tool_name, arguments=None):
@@ -241,6 +242,12 @@ def test_prompt_injection_cannot_bypass_customer_analytics_denial(
         ),
     )
 
+    denials = AUTHORIZATION_DENIALS_TOTAL.labels(
+        role="CUSTOMER",
+        capability="get_revenue_summary",
+    )
+    denials_before = denials._value.get()
+
     with caplog.at_level(logging.WARNING, logger=secure_node_module.__name__):
         result = asyncio.run(secure_node_module.secure_tool_node(state_for(
             UserRole.CUSTOMER,
@@ -267,6 +274,7 @@ def test_prompt_injection_cannot_bypass_customer_analytics_denial(
     assert record.role == "CUSTOMER"
     assert record.tool == "get_revenue_summary"
     assert record.authorization_latency >= 0
+    assert denials._value.get() == denials_before + 1
 
 
 def test_customer_transaction_executor_enforces_ownership(monkeypatch):

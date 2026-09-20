@@ -1,5 +1,6 @@
 import json
 import asyncio
+import logging
 
 from langchain_core.messages import ToolMessage
 
@@ -8,6 +9,10 @@ from ai.schemas.tool_result import ToolResult
 from core.config import DATABASE_MAX_RETRIES
 from core.errors import DatabaseUnavailableError
 from core.retry import retry_async
+from core.observability.metrics import (
+    AUTHORIZATION_DENIALS_TOTAL,
+    REFUND_EXECUTIONS_TOTAL,
+)
 from services.auth_service.authorization_service import require_permission
 from services.auth_service.exceptions import AuthorizationError
 from services.auth_service.models import UserRole
@@ -20,6 +25,9 @@ from services.transaction_service.exceptions import (
 from services.transaction_service.refund_execution_service import execute_refund
 
 
+logger = logging.getLogger(__name__)
+
+
 def _failed_execution(
     state: EnterpriseAgentState,
     *,
@@ -28,6 +36,18 @@ def _failed_execution(
     retryable: bool = False,
     retry_count: int | None = None,
 ) -> dict:
+    metric_result = "denied" if error == "permission_denied" else "failed"
+    REFUND_EXECUTIONS_TOTAL.labels(result=metric_result).inc()
+    log = logger.warning if metric_result == "denied" else logger.error
+    log(
+        "refund_execution_failed",
+        extra={
+            "event": "refund_execution",
+            "status": "failure",
+            "result": metric_result,
+            "error_code": error,
+        },
+    )
     tool_result = ToolResult.failure(
         error_code=error,
         message=message,
@@ -92,6 +112,10 @@ async def execute_refund_node(state: EnterpriseAgentState) -> dict:
             on_retry=record_retry,
         )
     except AuthorizationError:
+        AUTHORIZATION_DENIALS_TOTAL.labels(
+            role=state["user_role"],
+            capability="execute_refund",
+        ).inc()
         return _failed_execution(
             state,
             error="permission_denied",
@@ -130,6 +154,15 @@ async def execute_refund_node(state: EnterpriseAgentState) -> dict:
     tool_result = ToolResult.success({
         "refund": result.model_dump(mode="json"),
     })
+    REFUND_EXECUTIONS_TOTAL.labels(result=result.status).inc()
+    logger.info(
+        "refund_execution_completed",
+        extra={
+            "event": "refund_execution",
+            "status": "success",
+            "result": result.status,
+        },
+    )
     return {
         "messages": [ToolMessage(
             content=json.dumps(tool_result.model_dump(mode="json"), default=str),

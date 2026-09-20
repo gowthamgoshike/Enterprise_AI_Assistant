@@ -1,6 +1,8 @@
 from sqlalchemy import text
 
 from data.database.connection import engine
+from data.database.reliability import translate_database_errors
+from core.observability.timing import observe_database_query
 
 
 FIND_USER_BY_EMAIL = text("""
@@ -33,7 +35,11 @@ FIND_USER_BY_ID = text("""
 def find_user_by_email(
     email: str,
 ):
-    with engine.connect() as connection:
+    with (
+        observe_database_query("find_user_by_email"),
+        translate_database_errors(),
+        engine.connect() as connection,
+    ):
         result = connection.execute(
             FIND_USER_BY_EMAIL,
             {
@@ -47,7 +53,11 @@ def find_user_by_email(
 def find_user_by_id(
     user_id: str,
 ):
-    with engine.connect() as connection:
+    with (
+        observe_database_query("find_user_by_id"),
+        translate_database_errors(),
+        engine.connect() as connection,
+    ):
         return connection.execute(
             FIND_USER_BY_ID,
             {

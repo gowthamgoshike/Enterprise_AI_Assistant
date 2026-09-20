@@ -1,6 +1,9 @@
 """Reliable invocation boundary for model providers."""
 
 import asyncio
+import logging
+import os
+import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
@@ -10,9 +13,12 @@ from ollama import RequestError, ResponseError
 from core.config import MODEL_MAX_RETRIES, MODEL_TIMEOUT_SECONDS
 from core.errors import ModelUnavailableError
 from core.retry import retry_async
+from core.observability.metrics import MODEL_LATENCY, MODEL_REQUESTS_TOTAL
 
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
+MODEL_NAME = os.getenv("OLLAMA_MODEL", "unknown")
 
 
 def _is_transient_response_error(exc: ResponseError) -> bool:
@@ -30,11 +36,15 @@ async def invoke_model_with_retry(
     """Apply a timeout and retry only known transient provider failures."""
 
     async def invoke_once() -> T:
+        started = time.perf_counter()
+        status = "failure"
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 operation(),
                 timeout=MODEL_TIMEOUT_SECONDS,
             )
+            status = "success"
+            return result
         except ModelUnavailableError:
             raise
         except (TimeoutError, httpx.TimeoutException) as exc:
@@ -45,6 +55,22 @@ async def invoke_model_with_retry(
             if _is_transient_response_error(exc):
                 raise ModelUnavailableError() from exc
             raise
+        finally:
+            duration_seconds = time.perf_counter() - started
+            MODEL_REQUESTS_TOTAL.labels(
+                model=MODEL_NAME,
+                status=status,
+            ).inc()
+            MODEL_LATENCY.labels(model=MODEL_NAME).observe(duration_seconds)
+            logger.info(
+                "model_call_completed",
+                extra={
+                    "event": "model_call",
+                    "model": MODEL_NAME,
+                    "status": status,
+                    "latency_ms": round(duration_seconds * 1000, 2),
+                },
+            )
 
     return await retry_async(
         invoke_once,

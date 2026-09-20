@@ -35,6 +35,7 @@ from services.auth_service.models import UserRole
 from services.auth_service.permissions import Permission, has_permission
 from core.config import MODEL_MAX_RETRIES
 from core.errors import ModelUnavailableError
+from core.observability.timing import observe_async_node, observe_node
 
 
 logger = logging.getLogger(__name__)
@@ -425,16 +426,44 @@ def select_entry_node(state: EnterpriseAgentState) -> str:
     return "summarize" if should_summarize(state) else "agent"
 
 
+async def observed_agent_node(state: EnterpriseAgentState) -> dict:
+    return await observe_async_node("agent", agent_node, state)
+
+
+async def observed_summarize_node(state: EnterpriseAgentState) -> dict:
+    return await observe_async_node("summarize", summarize_node, state)
+
+
+async def observed_tools_node(state: EnterpriseAgentState) -> dict:
+    return await observe_async_node("secure_tools", tools_node, state)
+
+
+def observed_human_approval_node(state: EnterpriseAgentState):
+    return observe_node("human_approval", human_approval_node, state)
+
+
+async def observed_refund_node(state: EnterpriseAgentState) -> dict:
+    return await observe_async_node("execute_refund", execute_refund_node, state)
+
+
+def observed_rejection_node(state: EnterpriseAgentState) -> dict:
+    return observe_node("action_rejected", action_rejected_node, state)
+
+
+def observed_error_node(state: EnterpriseAgentState) -> dict:
+    return observe_node("error", error_node, state)
+
+
 def build_enterprise_tool_graph(checkpointer):
     """Build the agent using persistence owned by the caller."""
     builder = StateGraph(EnterpriseAgentState)
-    builder.add_node("agent", agent_node)
-    builder.add_node("summarize", summarize_node)
-    builder.add_node("secure_tools", tools_node)
-    builder.add_node("human_approval", human_approval_node)
-    builder.add_node("execute_refund", execute_refund_node)
-    builder.add_node("action_rejected", action_rejected_node)
-    builder.add_node("error", error_node)
+    builder.add_node("agent", observed_agent_node)
+    builder.add_node("summarize", observed_summarize_node)
+    builder.add_node("secure_tools", observed_tools_node)
+    builder.add_node("human_approval", observed_human_approval_node)
+    builder.add_node("execute_refund", observed_refund_node)
+    builder.add_node("action_rejected", observed_rejection_node)
+    builder.add_node("error", observed_error_node)
     builder.add_conditional_edges(
         START, select_entry_node, {"summarize": "summarize", "agent": "agent"},
     )
