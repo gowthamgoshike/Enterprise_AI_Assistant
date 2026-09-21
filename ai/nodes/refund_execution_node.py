@@ -6,7 +6,7 @@ from langchain_core.messages import ToolMessage
 
 from ai.schemas.graph_state import EnterpriseAgentState
 from ai.schemas.tool_result import ToolResult
-from core.config import DATABASE_MAX_RETRIES
+from core.config import settings
 from core.errors import DatabaseUnavailableError
 from core.retry import retry_async
 from core.observability.metrics import (
@@ -105,7 +105,7 @@ async def execute_refund_node(state: EnterpriseAgentState) -> dict:
                 approved_by=state["user_id"],
                 request_id=state["request_id"],
             ),
-            max_retries=DATABASE_MAX_RETRIES,
+            max_retries=settings.database_max_retries,
             retry_on=(DatabaseUnavailableError,),
             operation_name="execute_refund",
             request_id=state["request_id"],

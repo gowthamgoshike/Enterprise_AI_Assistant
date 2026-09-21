@@ -7,8 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from apps.api.schemas.health import DependencyStatus, ReadinessResponse
-from core.config import HEALTH_CHECK_TIMEOUT_SECONDS
-from core.app_settings import settings
+from core.config import settings
 from data.database.connection import engine
 
 
@@ -39,7 +38,7 @@ async def _database_status() -> DependencyStatus:
     try:
         await asyncio.wait_for(
             asyncio.to_thread(probe),
-            timeout=HEALTH_CHECK_TIMEOUT_SECONDS,
+            timeout=settings.health_check_timeout_seconds,
         )
     except Exception:
         return DependencyStatus(status="unavailable")
@@ -57,7 +56,7 @@ async def _checkpoint_status(request: Request) -> DependencyStatus:
             saver.aget_tuple({
                 "configurable": {"thread_id": "__health_probe__"}
             }),
-            timeout=HEALTH_CHECK_TIMEOUT_SECONDS,
+            timeout=settings.health_check_timeout_seconds,
         )
     except Exception:
         return DependencyStatus(status="unavailable")
@@ -71,7 +70,7 @@ async def _model_status() -> DependencyStatus:
     started = time.perf_counter()
     try:
         async with httpx.AsyncClient(
-            timeout=HEALTH_CHECK_TIMEOUT_SECONDS
+            timeout=settings.health_check_timeout_seconds
         ) as client:
             response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
             response.raise_for_status()

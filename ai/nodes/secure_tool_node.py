@@ -15,11 +15,7 @@ from ai.tools.secure_registry import SECURE_TOOL_REGISTRY
 from services.auth_service.authorization_service import require_permission
 from services.auth_service.exceptions import AuthorizationError
 from services.auth_service.models import UserRole
-from core.config import (
-    DATABASE_MAX_RETRIES,
-    TOOL_MAX_RETRIES,
-    TOOL_TIMEOUT_SECONDS,
-)
+from core.config import settings
 from core.errors import (
     BusinessRuleError,
     DatabaseUnavailableError,
@@ -168,7 +164,7 @@ async def secure_tool_node(
                     context=context,
                     **validated_arguments,
                 ),
-                TOOL_TIMEOUT_SECONDS,
+                settings.tool_timeout_seconds,
             )
         # Keep synchronous database work off the event loop. A timeout is not
         # applied here because cancelling asyncio.to_thread cannot cancel the
@@ -237,9 +233,9 @@ async def secure_tool_node(
                     )
                     if definition.retry_safe:
                         max_retries = (
-                            TOOL_MAX_RETRIES
+                            settings.tool_max_retries
                             if inspect.iscoroutinefunction(definition.function)
-                            else DATABASE_MAX_RETRIES
+                            else settings.database_max_retries
                         )
                         raw_result = await retry_async(
                             operation,

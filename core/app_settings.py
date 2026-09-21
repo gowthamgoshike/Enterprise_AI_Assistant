@@ -1,15 +1,5 @@
-"""Connection settings shared by the API and UI."""
+"""Backward-compatible import path for application settings."""
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from core.config import Settings, get_settings, settings
 
-
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    database_url: str | None = None
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str | None = None
-    api_base_url: str = "http://localhost:8000"
-
-
-settings = Settings()
+__all__ = ["Settings", "get_settings", "settings"]

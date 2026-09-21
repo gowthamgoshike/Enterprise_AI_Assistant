@@ -62,8 +62,8 @@ def test_retry_async_retries_only_classified_errors(monkeypatch):
 
 
 def test_model_timeout_is_retried_then_sanitized(monkeypatch):
-    monkeypatch.setattr(model_reliability, "MODEL_MAX_RETRIES", 1)
-    monkeypatch.setattr(model_reliability, "MODEL_TIMEOUT_SECONDS", 0.001)
+    monkeypatch.setattr(model_reliability.settings, "model_max_retries", 1)
+    monkeypatch.setattr(model_reliability.settings, "model_timeout_seconds", 0.001)
     monkeypatch.setattr(retry, "calculate_backoff", lambda _attempt: 0)
     operation = AsyncMock(side_effect=[TimeoutError("provider detail"), "ok"])
 

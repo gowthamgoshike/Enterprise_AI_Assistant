@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
@@ -10,7 +9,7 @@ from typing import TypeVar
 import httpx
 from ollama import RequestError, ResponseError
 
-from core.config import MODEL_MAX_RETRIES, MODEL_TIMEOUT_SECONDS
+from core.config import settings
 from core.errors import ModelUnavailableError
 from core.retry import retry_async
 from core.observability.metrics import MODEL_LATENCY, MODEL_REQUESTS_TOTAL
@@ -18,7 +17,7 @@ from core.observability.metrics import MODEL_LATENCY, MODEL_REQUESTS_TOTAL
 
 T = TypeVar("T")
 logger = logging.getLogger(__name__)
-MODEL_NAME = os.getenv("OLLAMA_MODEL", "unknown")
+MODEL_NAME = settings.ollama_model
 
 
 def _is_transient_response_error(exc: ResponseError) -> bool:
@@ -41,7 +40,7 @@ async def invoke_model_with_retry(
         try:
             result = await asyncio.wait_for(
                 operation(),
-                timeout=MODEL_TIMEOUT_SECONDS,
+                timeout=settings.model_timeout_seconds,
             )
             status = "success"
             return result
@@ -74,7 +73,7 @@ async def invoke_model_with_retry(
 
     return await retry_async(
         invoke_once,
-        max_retries=MODEL_MAX_RETRIES,
+        max_retries=settings.model_max_retries,
         retry_on=(ModelUnavailableError,),
         operation_name=operation_name,
         request_id=request_id,

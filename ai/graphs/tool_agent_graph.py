@@ -34,7 +34,7 @@ from ai.schemas.graph_state import EnterpriseAgentState
 from ai.tools.langchain_registry import get_tools_for_role
 from services.auth_service.models import UserRole
 from services.auth_service.permissions import Permission, has_permission
-from core.config import MODEL_MAX_RETRIES
+from core.config import settings
 from core.errors import ModelUnavailableError
 from core.observability.timing import observe_async_node, observe_node
 
@@ -425,7 +425,7 @@ async def summarize_node(state: EnterpriseAgentState) -> dict:
         return {
             "error_code": exc.code,
             "error_message": exc.safe_message,
-            "retry_count": state.get("retry_count", 0) + MODEL_MAX_RETRIES,
+            "retry_count": state.get("retry_count", 0) + settings.model_max_retries,
         }
     return {
         "conversation_summary": summary,

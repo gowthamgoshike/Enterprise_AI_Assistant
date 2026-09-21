@@ -1,6 +1,6 @@
 import requests
 
-from core.app_settings import settings
+from core.config import settings
 
 from ai.prompts.system_prompts import (
     ENTERPRISE_ASSISTANT_SYSTEM_PROMPT,

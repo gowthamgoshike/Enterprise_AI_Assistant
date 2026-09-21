@@ -1,5 +1,3 @@
-import os
-
 from datetime import (
     datetime,
     timedelta,
@@ -7,27 +5,12 @@ from datetime import (
 )
 
 import jwt
-from dotenv import load_dotenv
+from core.config import settings
 
 
-load_dotenv()
-
-
-JWT_SECRET_KEY = os.environ[
-    "JWT_SECRET_KEY"
-]
-
-JWT_ALGORITHM = os.getenv(
-    "JWT_ALGORITHM",
-    "HS256",
-)
-
-ACCESS_TOKEN_MINUTES = int(
-    os.getenv(
-        "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
-        "30",
-    )
-)
+JWT_SECRET_KEY = settings.jwt_secret
+JWT_ALGORITHM = settings.jwt_algorithm
+ACCESS_TOKEN_MINUTES = settings.jwt_access_token_expire_minutes
 
 
 def create_access_token(

@@ -6,7 +6,7 @@ import random
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from core.config import RETRY_BASE_DELAY_SECONDS, RETRY_MAX_DELAY_SECONDS
+from core.config import settings
 from core.observability.metrics import RETRIES_TOTAL
 
 
@@ -16,12 +16,16 @@ T = TypeVar("T")
 
 def calculate_backoff(
     attempt: int,
-    base_delay: float = RETRY_BASE_DELAY_SECONDS,
-    max_delay: float = RETRY_MAX_DELAY_SECONDS,
+    base_delay: float | None = None,
+    max_delay: float | None = None,
 ) -> float:
     """Return capped exponential delay plus up to twenty percent jitter."""
     if attempt < 0:
         raise ValueError("attempt must be non-negative")
+    if base_delay is None:
+        base_delay = settings.retry_base_delay_seconds
+    if max_delay is None:
+        max_delay = settings.retry_max_delay_seconds
     delay = min(base_delay * (2 ** attempt), max_delay)
     return delay + random.uniform(0, delay * 0.2)
 

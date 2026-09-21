@@ -1,4 +1,4 @@
-from core.app_settings import settings
+from core.config import settings
 
 
 API_BASE_URL = settings.api_base_url

@@ -6,12 +6,13 @@ from fastapi.testclient import TestClient
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import InMemorySaver
 
+from ai.memory import postgres_checkpointer
 from ai.memory.postgres_checkpointer import get_checkpoint_database_url
 from apps.api import main
 
 
 def test_checkpoint_url_required(monkeypatch):
-    monkeypatch.delenv("LANGGRAPH_DATABASE_URL", raising=False)
+    monkeypatch.setattr(postgres_checkpointer.settings, "langgraph_database_url", None)
     with pytest.raises(RuntimeError, match="LANGGRAPH_DATABASE_URL is not configured"):
         get_checkpoint_database_url()
 
@@ -31,7 +32,11 @@ def test_lifespan_reuses_graph_and_closes_saver(monkeypatch):
         finally:
             closed.append(True)
 
-    monkeypatch.setenv("LANGGRAPH_DATABASE_URL", "postgresql://test/checkpoints")
+    monkeypatch.setattr(
+        postgres_checkpointer.settings,
+        "langgraph_database_url",
+        "postgresql://test/checkpoints",
+    )
     monkeypatch.setattr(main.AsyncPostgresSaver, "from_conn_string", connect)
     app = FastAPI(lifespan=main.lifespan)
     with TestClient(app) as client:

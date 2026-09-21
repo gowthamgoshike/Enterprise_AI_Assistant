@@ -4,14 +4,13 @@ from ai.prompts.system_prompts import (
     ENTERPRISE_ASSISTANT_SYSTEM_PROMPT,
 )
 from ai.models.reliability import invoke_model_with_retry
-from core.config import MODEL_TIMEOUT_SECONDS
-from core.app_settings import settings
+from core.config import settings
 from core.errors import ModelUnavailableError
 
 OLLAMA_BASE_URL = settings.ollama_base_url
 OLLAMA_MODEL = settings.ollama_model
 
-LLM_REQUEST_TIMEOUT_SECONDS = MODEL_TIMEOUT_SECONDS
+LLM_REQUEST_TIMEOUT_SECONDS = settings.model_timeout_seconds
 
 async def chat_with_model(
     messages: list[dict],
@@ -81,7 +80,7 @@ async def stream_chat_with_model(
     ]
 
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(MODEL_TIMEOUT_SECONDS)
+        timeout=httpx.Timeout(settings.model_timeout_seconds)
     ) as client:
 
         async with client.stream(
