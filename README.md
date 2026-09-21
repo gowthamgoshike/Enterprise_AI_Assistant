@@ -114,6 +114,44 @@ The LLM does not directly control the database.
 The LLM reasons about user requests and selects approved tools.
 Business services enforce authorization, validation, and data access.
 
+## Agent evaluations
+
+The golden behavioral benchmark lives in `ai/evaluations`. It validates tool
+selection and arguments, no-tool behavior, grounding, authorization, approval
+workflows, and multi-turn isolation without exact-matching natural-language
+answers.
+
+Run the fast critical set:
+
+```bash
+.venv/bin/python -m ai.evaluations.runner --suite smoke
+```
+
+Run all 40 standard cases against a disposable test or staging database:
+
+```bash
+ALLOW_EVALUATION_FIXTURES=true APP_ENV=test \
+  .venv/bin/python -m ai.evaluations.runner \
+  --suite full --load-fixtures
+```
+
+The fixture loader refuses production environments and requires the explicit
+`ALLOW_EVALUATION_FIXTURES=true` opt-in. Results are written as versioned JSON
+under `evaluation_results/`. Security and approval-workflow scores are hard
+release gates; a single failure blocks release. The three outage cases are a
+separate `fault-injection` suite and use the runner's fixture hook so tests can
+mock database, model, and tool failures safely.
+
+Approved and rejected write-path evaluations are isolated in the explicitly
+selected `write` suite because the approved case performs a real disposable
+test-data refund:
+
+```bash
+ALLOW_EVALUATION_FIXTURES=true APP_ENV=test \
+  .venv/bin/python -m ai.evaluations.runner \
+  --suite write --load-fixtures
+```
+
 ---
 
 ## Initial Use Cases

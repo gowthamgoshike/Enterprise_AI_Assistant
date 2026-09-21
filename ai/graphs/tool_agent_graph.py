@@ -3,6 +3,7 @@
 import json
 import logging
 import re
+from collections import Counter
 from collections.abc import Sequence
 
 from langchain_core.messages import (
@@ -40,6 +41,7 @@ from core.observability.timing import observe_async_node, observe_node
 
 logger = logging.getLogger(__name__)
 GRAPH_RECURSION_LIMIT = 8
+AGENT_PROMPT_VERSION = "agent-v1"
 
 
 class PendingApprovalNotFoundError(RuntimeError):
@@ -111,6 +113,76 @@ def extract_tools_used(messages: Sequence[BaseMessage]) -> list[str]:
         for message in messages
         for call in (getattr(message, "tool_calls", None) or [])
     ]
+
+
+def extract_current_turn_tool_calls(
+    messages: Sequence[BaseMessage],
+    executed_tools: Sequence[str],
+) -> list[dict]:
+    """Return requested tool names and arguments after the latest user turn.
+
+    The execution flag distinguishes a model request from a tool that passed
+    deterministic validation, authorization, and execution. This trace is
+    only attached when callers explicitly enable evaluation mode.
+    """
+    latest_user_index = max(
+        (
+            index
+            for index, message in enumerate(messages)
+            if isinstance(message, HumanMessage)
+        ),
+        default=-1,
+    )
+    remaining_executions = Counter(executed_tools)
+    trace = []
+    for message in messages[latest_user_index + 1:]:
+        for call in getattr(message, "tool_calls", None) or []:
+            name = call.get("name", "")
+            executed = remaining_executions[name] > 0
+            if executed:
+                remaining_executions[name] -= 1
+            trace.append({
+                "name": name,
+                "arguments": call.get("args", {}),
+                "call_id": call.get("id"),
+                "executed": executed,
+            })
+    return trace
+
+
+def _evaluation_status(result: dict) -> str:
+    if result.get("__interrupt__"):
+        return "approval_required"
+    if result.get("error_code"):
+        return "degraded" if result["error_code"] in {
+            "model_unavailable",
+            "database_unavailable",
+            "tool_timeout",
+        } else "failed"
+    return "completed"
+
+
+def _evaluation_response(result: dict) -> str | None:
+    messages = result.get("messages") or []
+    if not messages:
+        return result.get("error_message")
+    content = getattr(messages[-1], "content", None)
+    return content if isinstance(content, str) else str(content)
+
+
+def build_evaluation_trace(result: dict) -> dict:
+    """Create non-user-visible metadata from an invocation or resumed run."""
+    return {
+        "tool_calls": extract_current_turn_tool_calls(
+            result.get("messages", []),
+            result.get("current_turn_tools", []),
+        ),
+        "tools_executed": list(result.get("current_turn_tools", [])),
+        "status": _evaluation_status(result),
+        "response": _evaluation_response(result),
+        "error_code": result.get("error_code"),
+        "approval_status": result.get("approval_status"),
+    }
 
 
 def _message_text(message: BaseMessage) -> str:
@@ -507,6 +579,7 @@ async def run_agent_graph(
     user_id: str,
     user_role: str,
     customer_id: str | None,
+    evaluation_mode: bool = False,
 ) -> dict:
     config = {
         "configurable": {"thread_id": thread_id},
@@ -537,6 +610,11 @@ async def run_agent_graph(
         request_id,
         result["current_turn_tools"],
     )
+    if evaluation_mode:
+        # Copy the graph result so evaluation-only metadata never enters the
+        # checkpointed state or normal client responses.
+        result = dict(result)
+        result["evaluation_trace"] = build_evaluation_trace(result)
     return result
 
 

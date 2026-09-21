@@ -1,0 +1,30 @@
+[
+  {
+    "id": "WRITE-001",
+    "category": "workflow",
+    "user_message": "Refund TX-EVAL-REFUND-001 because it was duplicated.",
+    "identity": {"user_id": "EVAL-ADMIN", "role": "ADMIN"},
+    "fixture": "refund_completed",
+    "expected_tool": "propose_refund",
+    "expected_status": "completed",
+    "expected_approval_status": "approved",
+    "expected_executed_tools": ["propose_refund", "execute_refund"],
+    "approval": {"approved": true, "comment": "Evaluation approval"},
+    "critical": true,
+    "tags": ["write"]
+  },
+  {
+    "id": "WRITE-002",
+    "category": "workflow",
+    "user_message": "Refund TX-EVAL-REFUND-001 because it was duplicated.",
+    "identity": {"user_id": "EVAL-ADMIN", "role": "ADMIN"},
+    "fixture": "refund_completed",
+    "expected_tool": "propose_refund",
+    "expected_status": "completed",
+    "expected_approval_status": "rejected",
+    "expected_executed_tools": ["propose_refund"],
+    "approval": {"approved": false, "comment": "Evaluation rejection"},
+    "critical": true,
+    "tags": ["write"]
+  }
+]

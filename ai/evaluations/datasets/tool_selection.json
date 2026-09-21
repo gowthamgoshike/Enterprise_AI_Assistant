@@ -1,0 +1,138 @@
+[
+  {
+    "id": "TOOL-001",
+    "category": "tool_selection",
+    "user_message": "Show transaction TX-EVAL-001",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-001"},
+    "tags": ["full", "smoke"]
+  },
+  {
+    "id": "TOOL-002",
+    "category": "tool_selection",
+    "user_message": "What is the status of TX-EVAL-002?",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-002"},
+    "tags": ["full", "smoke"]
+  },
+  {
+    "id": "TOOL-003",
+    "category": "tool_selection",
+    "user_message": "Can you check TX-EVAL-001?",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-001"}
+  },
+  {
+    "id": "TOOL-004",
+    "category": "tool_selection",
+    "user_message": "I need the details for transaction TX-EVAL-002.",
+    "identity": {"user_id": "EVAL-ADMIN", "role": "ADMIN"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-002"}
+  },
+  {
+    "id": "TOOL-005",
+    "category": "tool_selection",
+    "user_message": "How much was transaction TX-EVAL-001?",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-001"}
+  },
+  {
+    "id": "TOOL-006",
+    "category": "tool_selection",
+    "user_message": "Look up tx-eval-002 for me.",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-002"}
+  },
+  {
+    "id": "TOOL-007",
+    "category": "tool_selection",
+    "user_message": "Show the top 5 products",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_top_products",
+    "expected_arguments": {"limit": 5},
+    "tags": ["full", "smoke"]
+  },
+  {
+    "id": "TOOL-008",
+    "category": "tool_selection",
+    "user_message": "Which three products generated the most revenue?",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_top_products",
+    "expected_arguments": {"limit": 3}
+  },
+  {
+    "id": "TOOL-009",
+    "category": "tool_selection",
+    "user_message": "Give me the current revenue summary.",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_revenue_summary"
+  },
+  {
+    "id": "TOOL-010",
+    "category": "tool_selection",
+    "user_message": "How many transactions failed?",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "expected_tool": "get_transaction_metrics"
+  },
+  {
+    "id": "TOOL-011",
+    "category": "tool_selection",
+    "user_message": "Show my latest 7 transactions.",
+    "identity": {"user_id": "EVAL-CUSTOMER-1", "role": "CUSTOMER", "customer_id": "CUST-EVAL-001"},
+    "expected_tool": "get_my_transactions",
+    "expected_arguments": {"limit": 7}
+  },
+  {
+    "id": "TOOL-012",
+    "category": "tool_selection",
+    "user_message": "can u check tx-eval-001",
+    "identity": {"user_id": "EVAL-CUSTOMER-1", "role": "CUSTOMER", "customer_id": "CUST-EVAL-001"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-001"}
+  },
+  {
+    "id": "TOOL-013",
+    "category": "tool_selection",
+    "user_message": "tx-eval-002 status?",
+    "identity": {"user_id": "EVAL-ADMIN", "role": "ADMIN"},
+    "expected_tool": "get_transaction",
+    "expected_arguments": {"transaction_id": "TX-EVAL-002"}
+  },
+  {
+    "id": "NOTOOL-001",
+    "category": "no_tool",
+    "user_message": "Explain what Kafka is.",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"},
+    "tags": ["full", "smoke"]
+  },
+  {
+    "id": "NOTOOL-002",
+    "category": "no_tool",
+    "user_message": "What is machine learning?",
+    "identity": {"user_id": "EVAL-CUSTOMER-1", "role": "CUSTOMER", "customer_id": "CUST-EVAL-001"}
+  },
+  {
+    "id": "NOTOOL-003",
+    "category": "no_tool",
+    "user_message": "What does idempotency mean?",
+    "identity": {"user_id": "EVAL-ADMIN", "role": "ADMIN"}
+  },
+  {
+    "id": "NOTOOL-004",
+    "category": "no_tool",
+    "user_message": "Write a short definition of event streaming.",
+    "identity": {"user_id": "EVAL-ANALYST", "role": "ANALYST"}
+  },
+  {
+    "id": "NOTOOL-005",
+    "category": "no_tool",
+    "user_message": "What is the difference between authentication and authorization?",
+    "identity": {"user_id": "EVAL-CUSTOMER-1", "role": "CUSTOMER", "customer_id": "CUST-EVAL-001"}
+  }
+]
