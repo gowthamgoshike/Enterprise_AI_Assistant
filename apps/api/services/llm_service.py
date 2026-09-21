@@ -1,25 +1,15 @@
-import os
-
 import httpx
 
-from dotenv import load_dotenv
 from ai.prompts.system_prompts import (
     ENTERPRISE_ASSISTANT_SYSTEM_PROMPT,
 )
 from ai.models.reliability import invoke_model_with_retry
 from core.config import MODEL_TIMEOUT_SECONDS
+from core.app_settings import settings
 from core.errors import ModelUnavailableError
 
-load_dotenv()
-
-
-OLLAMA_BASE_URL = os.getenv(
-    "OLLAMA_BASE_URL",
-)
-
-OLLAMA_MODEL = os.getenv(
-    "OLLAMA_MODEL",
-)
+OLLAMA_BASE_URL = settings.ollama_base_url
+OLLAMA_MODEL = settings.ollama_model
 
 LLM_REQUEST_TIMEOUT_SECONDS = MODEL_TIMEOUT_SECONDS
 

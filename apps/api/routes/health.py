@@ -1,20 +1,18 @@
 import asyncio
-import os
 import time
 
 import httpx
-from dotenv import load_dotenv
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from apps.api.schemas.health import DependencyStatus, ReadinessResponse
 from core.config import HEALTH_CHECK_TIMEOUT_SECONDS
+from core.app_settings import settings
 from data.database.connection import engine
 
 
-load_dotenv()
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL")
+OLLAMA_BASE_URL = settings.ollama_base_url
 
 router = APIRouter(prefix="/api/v1/health", tags=["health"])
 

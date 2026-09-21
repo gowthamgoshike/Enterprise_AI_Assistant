@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from core.app_settings import settings
+
 
 load_dotenv()
 
@@ -34,7 +36,7 @@ DATABASE_PASSWORD = os.getenv(
 )
 
 
-DATABASE_URL = (
+DATABASE_URL = settings.database_url or (
     f"postgresql+psycopg2://"
     f"{DATABASE_USER}:"
     f"{DATABASE_PASSWORD}@"

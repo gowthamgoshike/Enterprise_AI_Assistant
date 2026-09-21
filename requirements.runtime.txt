@@ -1,0 +1,24 @@
+# API and UI runtime only. Streaming and test dependencies remain in requirements.txt.
+fastapi
+uvicorn[standard]
+streamlit
+requests
+httpx
+
+pydantic
+pydantic-settings
+python-dotenv
+
+langchain-core
+langchain-ollama
+langgraph
+langgraph-checkpoint-postgres
+
+sqlalchemy
+psycopg2-binary
+psycopg[binary]
+
+pyjwt[crypto]==2.11.0
+pwdlib[argon2]==0.3.1
+email-validator==2.3.0
+prometheus-client

@@ -1,11 +1,4 @@
-import os
-
-from dotenv import load_dotenv
+from core.app_settings import settings
 
 
-load_dotenv()
-
-
-API_BASE_URL = os.getenv(
-    "API_BASE_URL"
-)
+API_BASE_URL = settings.api_base_url

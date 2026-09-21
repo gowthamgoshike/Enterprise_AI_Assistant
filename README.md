@@ -70,6 +70,99 @@ Ollama
 Production LLM:
 vLLM on AWS GPU infrastructure
 
+## Run the API and UI with Docker Compose
+
+Install Docker Desktop and Ollama on the Mac. Run `ollama list` and
+`curl http://localhost:11434/api/tags` first. Set `OLLAMA_MODEL` in the
+root `.env` to an installed model. The `DATABASE_USER`,
+`DATABASE_PASSWORD`, `DATABASE_NAME`, and `DATABASE_PORT` values in `.env`
+must match the existing Postgres container. The API also requires
+`JWT_SECRET_KEY`.
+
+From the repository root:
+
+```bash
+docker start enterprise-postgres  # if it is stopped
+docker compose --env-file .env -f infrastructure/docker/compose.yaml up --build -d
+docker compose --env-file .env -f infrastructure/docker/compose.yaml ps
+curl http://localhost:8000/api/v1/health/ready
+```
+
+Open the UI at `http://localhost:8501`. The API is at
+`http://localhost:8000`. Compose starts only the API and UI. The API
+reaches the already running Postgres container through
+`host.docker.internal:${DATABASE_PORT}` and uses its existing users,
+transactions, and checkpoints. The UI reaches the API at `http://api:8000`.
+No database initialization or account migration is needed. The images
+install `requirements.runtime.txt`, which omits the Spark, Kafka, and test
+packages used outside the API and UI.
+
+To check model access from the API container:
+
+```bash
+docker compose --env-file .env -f infrastructure/docker/compose.yaml exec api \
+  python -c "import httpx; print(httpx.get('http://host.docker.internal:11434/api/tags').status_code)"
+```
+
+If that fails while the host curl works, configure Ollama to listen on an
+interface reachable from Docker Desktop without exposing it to the public
+network. To stop the API and UI without stopping the existing database, run:
+
+```bash
+docker compose --env-file .env -f infrastructure/docker/compose.yaml down
+```
+
+The earlier `docker_postgres_data` volume from the separate Compose database
+is not used by this setup and has not been deleted.
+
+## Run Ollama, API, and UI on the Mac
+
+Ollama already runs outside Docker. To use only the model, run
+`ollama run qwen3.5:4b` (or replace the name with another installed model).
+No project files need to change for that.
+
+To run the complete app on the Mac while keeping the existing
+`enterprise-postgres` container for data, start that container and stop the
+Compose API/UI so ports 8000 and 8501 are free:
+
+```bash
+docker start enterprise-postgres
+docker compose --env-file .env -f infrastructure/docker/compose.yaml down
+ollama list
+curl http://localhost:11434/api/tags
+.venv/bin/python -m pip install -r requirements.runtime.txt
+```
+
+The root `.env` should use `OLLAMA_BASE_URL=http://localhost:11434`, an
+installed `OLLAMA_MODEL`, `API_BASE_URL=http://localhost:8000`, and the
+existing database's `DATABASE_HOST=localhost`, `DATABASE_PORT=5432`,
+`DATABASE_NAME`, `DATABASE_USER`, and `DATABASE_PASSWORD`. Set
+`LANGGRAPH_DATABASE_URL` to the same database at `localhost:5432` and keep
+`JWT_SECRET_KEY` set. If you define `DATABASE_URL`, it takes precedence over
+the individual `DATABASE_*` settings and must also point to the host
+database.
+
+In one terminal, from the repository root:
+
+```bash
+.venv/bin/python -m uvicorn apps.api.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+In another terminal:
+
+```bash
+.venv/bin/python -m streamlit run apps/ui/app.py --server.address 127.0.0.1 --server.port 8501
+```
+
+Check `http://localhost:8000/api/v1/health/ready` and open
+`http://localhost:8501`. These commands were also verified on spare ports
+8001 and 8502 while the Compose API/UI were running.
+
+To stop using Docker entirely, run PostgreSQL on the Mac or another host,
+restore the existing database there, and point `DATABASE_*`,
+`LANGGRAPH_DATABASE_URL`, and any `DATABASE_URL` at that PostgreSQL instance.
+The Python application and Ollama need no code changes.
+
 ## Spark Data Lake Paths
 
 The Spark Bronze, Silver, and Gold jobs read their paths from `DATA_ROOT`.

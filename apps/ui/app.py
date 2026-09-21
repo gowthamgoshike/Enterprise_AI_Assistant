@@ -133,14 +133,15 @@ if (
                     "Missing access token"
                 )
 
-        except (
-            requests.RequestException,
-            KeyError,
-            TypeError,
-        ):
-            st.error(
-                "Invalid email or password."
-            )
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 401:
+                st.error("Invalid email or password.")
+            else:
+                st.error("Login request failed. Check the API status and try again.")
+        except requests.RequestException:
+            st.error("Cannot reach the API. Check that the server is running.")
+        except (KeyError, TypeError):
+            st.error("The API returned an invalid login response.")
 
         else:
             st.session_state.access_token = access_token

@@ -1,4 +1,5 @@
 pydantic
+pydantic-settings
 pytest
 pytest-asyncio
 python-dotenv[cli]
