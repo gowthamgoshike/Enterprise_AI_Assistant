@@ -40,9 +40,11 @@ REVENUE_SUMMARY_QUERY = text("""
 TRANSACTION_METRICS_QUERY = text("""
     SELECT
         status,
-        transaction_count
+        COUNT(*) AS transaction_count
 
-    FROM transaction_metrics
+    FROM transactions
+
+    GROUP BY status
 
     ORDER BY status
 """)

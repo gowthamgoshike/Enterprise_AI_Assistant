@@ -64,7 +64,7 @@ def get_transaction_metrics() -> dict:
     """
     Return transaction counts grouped by
     transaction status from the current
-    enterprise analytics dataset.
+    operational transaction dataset.
 
     Use this tool for questions about
     completed, failed, pending, or refunded
