@@ -21,6 +21,9 @@ from apps.ui.components.sidebar import (
 )
 from apps.ui.services.api_client import (
     SessionExpiredError,
+    cancel_background_job,
+    create_failed_transaction_report,
+    get_background_job,
     login,
     submit_approval,
 )
@@ -80,6 +83,10 @@ if "pending_approval" not in st.session_state:
     st.session_state.pending_approval = None
 
 
+if "report_job" not in st.session_state:
+    st.session_state.report_job = None
+
+
 def clear_authenticated_session() -> None:
     st.session_state.access_token = None
     st.session_state.authenticated = False
@@ -88,6 +95,7 @@ def clear_authenticated_session() -> None:
         uuid.uuid4()
     )
     st.session_state.pending_approval = None
+    st.session_state.report_job = None
     st.session_state.pop(
         "model_name",
         None,
@@ -222,6 +230,109 @@ st.info(
     "Ask about specific transactions, top products by revenue, "
     "aggregate revenue, or transaction counts by status."
 )
+
+
+def render_report_job() -> None:
+    report_job = st.session_state.report_job
+    if not report_job:
+        return
+
+    if report_job["status"] in {"queued", "running"}:
+        try:
+            report_job = get_background_job(
+                job_id=report_job["job_id"],
+                access_token=st.session_state.access_token,
+            )
+            st.session_state.report_job = report_job
+            if report_job["status"] not in {"queued", "running"}:
+                # Rebuild the fragment without its polling timer.
+                st.rerun()
+        except SessionExpiredError:
+            clear_authenticated_session()
+            st.session_state.authentication_notice = (
+                "Your session expired. Please log in again."
+            )
+            st.rerun()
+        except requests.RequestException:
+            st.warning("Unable to refresh the report status; retrying.")
+
+    st.success("Report submitted.")
+    st.code(report_job["job_id"])
+    st.write("Status:", report_job["status"].title())
+    if report_job.get("stage"):
+        st.write("Stage:", report_job["stage"].replace("_", " ").title())
+
+    if report_job["status"] in {"queued", "running"}:
+        refresh_column, cancel_column = st.columns(2)
+        if refresh_column.button("Refresh report status"):
+            st.rerun(scope="fragment")
+        if report_job["status"] == "queued" and cancel_column.button(
+            "Cancel report"
+        ):
+            try:
+                st.session_state.report_job = cancel_background_job(
+                    job_id=report_job["job_id"],
+                    access_token=st.session_state.access_token,
+                )
+                st.rerun()
+            except SessionExpiredError:
+                clear_authenticated_session()
+                st.session_state.authentication_notice = (
+                    "Your session expired. Please log in again."
+                )
+                st.rerun()
+            except requests.RequestException:
+                st.error("Unable to cancel the report.")
+
+    if report_job["status"] == "completed" and report_job.get("result"):
+        result = report_job["result"]
+        st.metric("Failed transactions", result["failed_count"])
+        st.metric(
+            "Total failed amount",
+            f"${result['total_failed_amount_cents'] / 100:,.2f}",
+        )
+        st.dataframe(result.get("top_failure_products", []))
+    elif report_job["status"] == "failed":
+        st.error(f"Report failed: {report_job.get('error_code', 'unknown')}")
+    elif report_job["status"] == "cancelled":
+        st.info("Report cancelled.")
+
+
+report_poll_seconds = (
+    3
+    if st.session_state.report_job
+    and st.session_state.report_job["status"] in {"queued", "running"}
+    else None
+)
+render_report_job_fragment = st.fragment(
+    render_report_job,
+    run_every=report_poll_seconds,
+)
+
+
+with st.expander("Failed transaction report", expanded=False):
+    if st.button("Generate 30-Day Failure Report"):
+        try:
+            st.session_state.report_job = create_failed_transaction_report(
+                days=30,
+                access_token=st.session_state.access_token,
+            )
+            st.rerun()
+        except SessionExpiredError:
+            clear_authenticated_session()
+            st.session_state.authentication_notice = (
+                "Your session expired. Please log in again."
+            )
+            st.rerun()
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 403:
+                st.error("Your role cannot generate analytics reports.")
+            else:
+                st.error("Unable to submit the report job.")
+        except requests.RequestException:
+            st.error("Cannot reach the API.")
+
+    render_report_job_fragment()
 
 
 if not st.session_state.messages:

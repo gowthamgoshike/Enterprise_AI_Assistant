@@ -141,6 +141,54 @@ def test_submit_approval_uses_bearer_token(monkeypatch):
     assert result == {"status": "completed"}
 
 
+def test_report_job_client_supports_submit_poll_and_cancel(monkeypatch):
+    calls = []
+    responses = iter([
+        FakeResponse(payload={"job_id": "JOB-1", "status": "queued"}),
+        FakeResponse(payload={"job_id": "JOB-1", "status": "running"}),
+        FakeResponse(payload={"job_id": "JOB-1", "status": "cancelled"}),
+    ])
+
+    def fake_request(url, **kwargs):
+        calls.append((url, kwargs))
+        return next(responses)
+
+    monkeypatch.setattr(api_client.requests, "post", fake_request)
+    monkeypatch.setattr(api_client.requests, "get", fake_request)
+
+    api_client.create_failed_transaction_report(
+        days=30,
+        access_token="jwt-token",
+    )
+    api_client.get_background_job(job_id="JOB-1", access_token="jwt-token")
+    api_client.cancel_background_job(job_id="JOB-1", access_token="jwt-token")
+
+    assert calls == [
+        (
+            f"{api_client.API_BASE_URL}/api/v1/jobs/failed-transactions",
+            {
+                "json": {"days": 30},
+                "headers": {"Authorization": "Bearer jwt-token"},
+                "timeout": 30,
+            },
+        ),
+        (
+            f"{api_client.API_BASE_URL}/api/v1/jobs/JOB-1",
+            {
+                "headers": {"Authorization": "Bearer jwt-token"},
+                "timeout": 10,
+            },
+        ),
+        (
+            f"{api_client.API_BASE_URL}/api/v1/jobs/JOB-1/cancel",
+            {
+                "headers": {"Authorization": "Bearer jwt-token"},
+                "timeout": 10,
+            },
+        ),
+    ]
+
+
 def test_stream_chat_uses_bearer_token_and_detects_401(monkeypatch):
     calls = []
     response = FakeResponse(

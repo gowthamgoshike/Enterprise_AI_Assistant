@@ -97,6 +97,29 @@ GET_TRANSACTIONS_BY_CUSTOMER = text("""
 """)
 
 
+FIND_FAILED_TRANSACTIONS = text("""
+    SELECT
+        transaction_id,
+        customer_id,
+        product_id,
+        amount_cents,
+        currency,
+        status,
+        transaction_type,
+        source,
+        event_time
+    FROM transactions
+    WHERE status = 'failed'
+      AND event_time >= NOW() - make_interval(days => :days)
+    ORDER BY event_time DESC
+""")
+
+
+SET_LOCAL_STATEMENT_TIMEOUT = text("""
+    SELECT set_config('statement_timeout', :timeout_ms, true)
+""")
+
+
 def upsert_transaction(transaction: dict) -> None:
     with observe_database_query("upsert_transaction"), translate_database_errors():
         with engine.begin() as connection:
@@ -151,6 +174,27 @@ def get_transactions_by_customer(
                 },
             )
             return [dict(row) for row in result.mappings()]
+
+
+def find_failed_transactions(
+    days: int,
+    *,
+    timeout_ms: int = 120_000,
+) -> list[dict]:
+    with (
+        observe_database_query("find_failed_transactions"),
+        translate_database_errors(),
+        engine.begin() as connection,
+    ):
+        connection.execute(
+            SET_LOCAL_STATEMENT_TIMEOUT,
+            {"timeout_ms": str(timeout_ms)},
+        )
+        result = connection.execute(
+            FIND_FAILED_TRANSACTIONS,
+            {"days": days},
+        )
+        return [dict(row) for row in result.mappings()]
 
 
 # Backwards-compatible name for callers written before the scoped tool flow.

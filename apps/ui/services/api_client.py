@@ -109,3 +109,46 @@ def submit_approval(
     )
     _raise_for_authenticated_request(response)
     return response.json()
+
+
+def create_failed_transaction_report(
+    *,
+    days: int,
+    access_token: str,
+) -> dict:
+    response = requests.post(
+        f"{API_BASE_URL}/api/v1/jobs/failed-transactions",
+        json={"days": days},
+        headers=_authorization_headers(access_token),
+        timeout=30,
+    )
+    _raise_for_authenticated_request(response)
+    return response.json()
+
+
+def get_background_job(
+    *,
+    job_id: str,
+    access_token: str,
+) -> dict:
+    response = requests.get(
+        f"{API_BASE_URL}/api/v1/jobs/{job_id}",
+        headers=_authorization_headers(access_token),
+        timeout=10,
+    )
+    _raise_for_authenticated_request(response)
+    return response.json()
+
+
+def cancel_background_job(
+    *,
+    job_id: str,
+    access_token: str,
+) -> dict:
+    response = requests.post(
+        f"{API_BASE_URL}/api/v1/jobs/{job_id}/cancel",
+        headers=_authorization_headers(access_token),
+        timeout=10,
+    )
+    _raise_for_authenticated_request(response)
+    return response.json()

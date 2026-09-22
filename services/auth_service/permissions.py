@@ -10,6 +10,7 @@ class Permission(str, Enum):
     READ_REVENUE = "read_revenue"
     PROPOSE_REFUND = "propose_refund"
     EXECUTE_REFUND = "execute_refund"
+    GENERATE_ANALYTICS_REPORT = "generate_analytics_report"
     ADMIN_ACCESS = "admin_access"
 
 
@@ -21,6 +22,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.READ_TRANSACTION,
         Permission.READ_ANALYTICS,
         Permission.READ_REVENUE,
+        Permission.GENERATE_ANALYTICS_REPORT,
     },
     UserRole.ADMIN: {
         Permission.READ_TRANSACTION,
@@ -28,6 +30,7 @@ ROLE_PERMISSIONS: dict[UserRole, set[Permission]] = {
         Permission.READ_REVENUE,
         Permission.PROPOSE_REFUND,
         Permission.EXECUTE_REFUND,
+        Permission.GENERATE_ANALYTICS_REPORT,
         Permission.ADMIN_ACCESS,
     },
 }

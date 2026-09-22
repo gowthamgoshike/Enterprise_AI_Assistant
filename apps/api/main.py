@@ -27,6 +27,7 @@ from apps.api.routes.chat_stream import router as chat_stream_router
 from apps.api.routes.health import (
     router as health_router,
 )
+from apps.api.routes.jobs import router as jobs_router
 
 
 configure_logging(level=getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -99,6 +100,11 @@ app.include_router(
 
 app.include_router(
     auth_router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    jobs_router,
     prefix="/api/v1",
 )
 

@@ -28,6 +28,7 @@ def test_analyst_has_read_permissions_without_admin_access():
         Permission.READ_TRANSACTION,
         Permission.READ_ANALYTICS,
         Permission.READ_REVENUE,
+        Permission.GENERATE_ANALYTICS_REPORT,
     }
     assert not has_permission(
         UserRole.ANALYST,
@@ -42,6 +43,7 @@ def test_admin_has_analytics_revenue_and_admin_permissions():
         Permission.READ_REVENUE,
         Permission.PROPOSE_REFUND,
         Permission.EXECUTE_REFUND,
+        Permission.GENERATE_ANALYTICS_REPORT,
         Permission.ADMIN_ACCESS,
     }
 
