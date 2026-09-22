@@ -5,6 +5,7 @@ import time
 import asyncio
 
 from langchain_core.messages import ToolMessage
+from langgraph.config import get_stream_writer
 from pydantic import ValidationError
 
 from ai.schemas.graph_state import EnterpriseAgentState
@@ -39,6 +40,15 @@ TRUSTED_CONTEXT_FIELDS = {
     "permissions",
     "request_id",
 }
+
+
+def _emit_tool_progress(event_type: str, tool_name: str) -> None:
+    """Emit only allowlisted tool names when a graph stream is active."""
+    try:
+        writer = get_stream_writer()
+    except (RuntimeError, LookupError):
+        return
+    writer({"type": event_type, "tool": tool_name})
 
 
 def _validate_model_arguments(
@@ -231,25 +241,29 @@ async def secure_tool_node(
                         validated_arguments,
                         context,
                     )
-                    if definition.retry_safe:
-                        max_retries = (
-                            settings.tool_max_retries
-                            if inspect.iscoroutinefunction(definition.function)
-                            else settings.database_max_retries
-                        )
-                        raw_result = await retry_async(
-                            operation,
-                            max_retries=max_retries,
-                            retry_on=(
-                                DatabaseUnavailableError,
-                                ToolTimeoutError,
-                            ),
-                            operation_name=f"tool:{tool_name}",
-                            request_id=context.request_id,
-                            on_retry=record_retry,
-                        )
-                    else:
-                        raw_result = await operation()
+                    _emit_tool_progress("tool_start", tool_name)
+                    try:
+                        if definition.retry_safe:
+                            max_retries = (
+                                settings.tool_max_retries
+                                if inspect.iscoroutinefunction(definition.function)
+                                else settings.database_max_retries
+                            )
+                            raw_result = await retry_async(
+                                operation,
+                                max_retries=max_retries,
+                                retry_on=(
+                                    DatabaseUnavailableError,
+                                    ToolTimeoutError,
+                                ),
+                                operation_name=f"tool:{tool_name}",
+                                request_id=context.request_id,
+                                on_retry=record_retry,
+                            )
+                        else:
+                            raw_result = await operation()
+                    finally:
+                        _emit_tool_progress("tool_end", tool_name)
                     if definition.requires_approval:
                         _log_authorization(
                             context,

@@ -7,6 +7,7 @@ import pytest
 import psycopg
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
 
 from apps.api.dependencies.auth import get_current_user
 from apps.api.main import app
@@ -16,6 +17,19 @@ from services.auth_service.models import UserRole
 
 
 client = TestClient(app)
+
+
+def parse_sse(response):
+    events = []
+    event_type = None
+    for line in response.text.splitlines():
+        if line.startswith("event:"):
+            event_type = line.removeprefix("event:").strip()
+        elif line.startswith("data:"):
+            payload = json.loads(line.removeprefix("data:").strip())
+            assert payload["type"] == event_type
+            events.append(payload)
+    return events
 
 
 @pytest.fixture(autouse=True)
@@ -129,18 +143,7 @@ def test_chat_endpoints_use_graph(monkeypatch):
     assert response.json()["route"] is None
     assert response.json()["route_confidence"] is None
 
-    response = client.post(
-        "/api/v1/chat/stream",
-        json={"messages": messages, "session_id": "conversation-123"},
-    )
-    assert response.status_code == 200
-    events = [json.loads(line) for line in response.text.splitlines()]
-    assert events[0]["message"]["content"] == "Revenue is 100."
-    assert events[-1]["done"] is True
-    assert events[-1]["route"] is None
-    assert events[-1]["route_confidence"] is None
-    assert events[-1]["tools_used"] == tool_names
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert all(call["user_message"] == messages[-1]["content"] for call in calls)
     assert all(call["request_id"] for call in calls)
     assert all(call["thread_id"] == "USER-TEST:conversation-123" for call in calls)
@@ -171,7 +174,16 @@ def test_chat_general_answer_uses_agent_loop(monkeypatch):
         ], "session_id": f"general-{endpoint}"})
         assert response.status_code == 200
         if endpoint.endswith("/stream"):
-            result = json.loads(response.text.splitlines()[-1])
+            assert response.headers["content-type"].startswith("text/event-stream")
+            events = parse_sse(response)
+            assert events[0]["type"] == "status"
+            assert events[-1]["type"] == "done"
+            assert "".join(
+                event["data"]["text"]
+                for event in events
+                if event["type"] == "token"
+            ) == "Please clarify your request."
+            result = events[-1]["data"]
         else:
             result = response.json()
             assert result["agent_action"] == "respond"
@@ -181,6 +193,141 @@ def test_chat_general_answer_uses_agent_loop(monkeypatch):
         assert result["tools_used"] == []
 
 
+def test_stream_endpoint_emits_model_chunks_before_done(monkeypatch):
+    from ai.graphs import tool_agent_graph
+
+    monkeypatch.setattr(
+        tool_agent_graph,
+        "model_with_tools",
+        FakeListChatModel(responses=["Kafka streams events."]),
+    )
+
+    response = client.post("/api/v1/chat/stream", json={
+        "messages": [{"role": "user", "content": "Explain Kafka briefly."}],
+        "session_id": "stream-tokens",
+    })
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    tokens = [event["data"]["text"] for event in events if event["type"] == "token"]
+    assert "".join(tokens) == "Kafka streams events."
+    assert len(tokens) > 1
+    assert events[-1]["type"] == "done"
+
+
+def test_stream_endpoint_emits_safe_tool_progress(monkeypatch):
+    from ai.graphs import tool_agent_graph
+    from ai.nodes import secure_tool_node
+    from ai.tools.secure_registry import ToolDefinition
+    from services.auth_service.permissions import Permission
+
+    model = AsyncMock()
+    model.ainvoke.side_effect = [
+        AIMessage(content="", tool_calls=[{
+            "name": "get_transaction",
+            "args": {"transaction_id": "TX-PRIVATE"},
+            "id": "call-1",
+        }]),
+        AIMessage(content="The transaction was not found."),
+    ]
+    monkeypatch.setattr(tool_agent_graph, "model_with_tools", model)
+
+    async def lookup(*, context, transaction_id):
+        assert context.customer_id == "CUST-001"
+        assert transaction_id == "TX-PRIVATE"
+        return {"found": False, "transaction": None}
+
+    monkeypatch.setitem(
+        secure_tool_node.SECURE_TOOL_REGISTRY,
+        "get_transaction",
+        ToolDefinition(
+            name="get_transaction",
+            function=lookup,
+            permission=Permission.READ_OWN_TRANSACTIONS,
+        ),
+    )
+
+    response = client.post("/api/v1/chat/stream", json={
+        "messages": [{"role": "user", "content": "Find a transaction"}],
+        "session_id": "stream-tool-progress",
+    })
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    assert [event["type"] for event in events].count("tool_start") == 1
+    assert [event["type"] for event in events].count("tool_end") == 1
+    assert next(
+        event["data"]["message"]
+        for event in events
+        if event["type"] == "tool_start"
+    ) == "Checking transaction..."
+    assert "TX-PRIVATE" not in response.text
+    assert events[-1]["data"]["tools_used"] == ["get_transaction"]
+
+
+def test_stream_endpoint_preserves_refund_approval_interrupt(monkeypatch):
+    from ai.graphs import tool_agent_graph
+    from ai.nodes import secure_tool_node
+    from ai.tools.secure_registry import ToolDefinition
+    from services.auth_service.permissions import Permission
+
+    admin = AuthenticatedUser(
+        user_id="USER-ADMIN",
+        email="admin@example.com",
+        role=UserRole.ADMIN,
+        customer_id=None,
+    )
+    app.dependency_overrides[get_current_user] = lambda: admin
+    model = AsyncMock()
+    model.ainvoke.return_value = AIMessage(content="", tool_calls=[{
+        "name": "propose_refund",
+        "args": {"transaction_id": "TX-123", "reason": "duplicate charge"},
+        "id": "refund-call",
+    }])
+    monkeypatch.setattr(tool_agent_graph, "model_with_tools", model)
+
+    async def propose(*, context, transaction_id, reason):
+        return {
+            "action_id": "ACTION-123",
+            "action_type": "refund",
+            "transaction_id": transaction_id,
+            "amount_cents": 2500,
+            "currency": "USD",
+            "reason": reason,
+            "requested_by": context.user_id,
+            "internal_secret": "never-stream-this",
+        }
+
+    monkeypatch.setitem(
+        secure_tool_node.SECURE_TOOL_REGISTRY,
+        "propose_refund",
+        ToolDefinition(
+            name="propose_refund",
+            function=propose,
+            permission=Permission.PROPOSE_REFUND,
+            requires_approval=True,
+        ),
+    )
+
+    response = client.post("/api/v1/chat/stream", json={
+        "messages": [{"role": "user", "content": "Refund TX-123"}],
+        "session_id": "stream-approval",
+    })
+
+    assert response.status_code == 200
+    events = parse_sse(response)
+    assert any(event["type"] == "tool_start" for event in events)
+    approval = next(
+        event["data"] for event in events
+        if event["type"] == "approval_required"
+    )
+    assert approval["action_id"] == "ACTION-123"
+    assert approval["transaction_id"] == "TX-123"
+    assert events[-1]["data"]["status"] == "approval_required"
+    assert "never-stream-this" not in response.text
+    assert "requested_by" not in response.text
+
+
 def test_chat_step_limit_returns_safe_error(monkeypatch):
     from unittest.mock import AsyncMock
     from langgraph.errors import GraphRecursionError
@@ -188,13 +335,12 @@ def test_chat_step_limit_returns_safe_error(monkeypatch):
     monkeypatch.setattr(chat_routes, "run_agent_graph", AsyncMock(
         side_effect=GraphRecursionError("internal details"),
     ))
-    for endpoint in ["/api/v1/chat", "/api/v1/chat/stream"]:
-        response = client.post(endpoint, json={"messages": [
-            {"role": "user", "content": "Repeat forever"}
-        ], "session_id": "conversation-limit"})
-        assert response.status_code == 503
-        assert "execution limit" in response.json()["detail"]
-        assert "internal details" not in response.text
+    response = client.post("/api/v1/chat", json={"messages": [
+        {"role": "user", "content": "Repeat forever"}
+    ], "session_id": "conversation-limit"})
+    assert response.status_code == 503
+    assert "execution limit" in response.json()["detail"]
+    assert "internal details" not in response.text
 
 
 def test_chat_returns_structured_degraded_response(monkeypatch):

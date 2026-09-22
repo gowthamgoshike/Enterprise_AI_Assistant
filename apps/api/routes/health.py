@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from apps.api.schemas.health import DependencyStatus, ReadinessResponse
 from core.config import settings
+from core.redis import check_redis
 from data.database.connection import engine
 
 
@@ -82,26 +83,49 @@ async def _model_status() -> DependencyStatus:
     )
 
 
+async def _redis_status() -> DependencyStatus:
+    started = time.perf_counter()
+    try:
+        healthy = await asyncio.wait_for(
+            check_redis(), timeout=settings.health_check_timeout_seconds,
+        )
+    except Exception:
+        healthy = False
+    return DependencyStatus(
+        status="healthy" if healthy else "unavailable",
+        latency_ms=(
+            round((time.perf_counter() - started) * 1000, 2)
+            if healthy else None
+        ),
+    )
+
+
 @router.get("/ready", response_model=ReadinessResponse)
 async def readiness(request: Request):
     """Report sanitized dependency readiness and graceful degradation."""
-    database, checkpoint_store, model = await asyncio.gather(
+    database, checkpoint_store, model, redis = await asyncio.gather(
         _database_status(),
         _checkpoint_status(request),
         _model_status(),
+        _redis_status(),
     )
-    ready = all(
+    core_ready = all(
         dependency.status == "healthy"
         for dependency in (database, checkpoint_store, model)
     )
     result = ReadinessResponse(
-        status="ready" if ready else "degraded",
+        status=(
+            "ready"
+            if core_ready and redis.status == "healthy"
+            else "degraded"
+        ),
         api=DependencyStatus(status="healthy"),
         database=database,
         checkpoint_store=checkpoint_store,
         model=model,
+        redis=redis,
     )
-    if ready:
+    if core_ready:
         return result
     return JSONResponse(status_code=503, content=result.model_dump(mode="json"))
 

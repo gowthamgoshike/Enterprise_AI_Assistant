@@ -8,7 +8,7 @@ pyspark==3.5.8
 pandas
 requests
 
-sqlalchemy
+sqlalchemy[asyncio]
 psycopg2-binary
 
 
@@ -28,3 +28,5 @@ langgraph
 langgraph-checkpoint-postgres
 psycopg[binary]
 prometheus-client
+asyncpg
+redis

@@ -1,6 +1,6 @@
 import pytest
 
-from apps.ui.services import api_client
+from apps.ui.services import api_client, chat_client
 
 
 class FakeResponse:
@@ -144,35 +144,50 @@ def test_submit_approval_uses_bearer_token(monkeypatch):
 def test_stream_chat_uses_bearer_token_and_detects_401(monkeypatch):
     calls = []
     response = FakeResponse(
-        lines=[b'{"done": true}'],
+        lines=[
+            "event: token",
+            'data: {"type":"token","data":{"text":"Hello"}}',
+            "",
+            "event: done",
+            'data: {"type":"done","data":{"status":"completed"}}',
+        ],
     )
 
-    def fake_post(url, **kwargs):
-        calls.append((url, kwargs))
+    def fake_stream(method, url, **kwargs):
+        calls.append((method, url, kwargs))
         return response
 
-    monkeypatch.setattr(api_client.requests, "post", fake_post)
+    monkeypatch.setattr(chat_client.httpx, "stream", fake_stream)
 
-    assert list(api_client.stream_chat(
-        messages=[{"role": "user", "content": "Hello"}],
+    assert list(chat_client.stream_chat(
+        message="Hello",
         session_id="SESSION-1",
         access_token="jwt-token",
-    )) == [{"done": True}]
-    assert calls[0][1]["headers"] == {
+    )) == [
+        {"type": "token", "data": {"text": "Hello"}},
+        {"type": "done", "data": {"status": "completed"}},
+    ]
+    assert calls[0][0:2] == (
+        "POST", f"{chat_client.API_BASE_URL}/api/v1/chat/stream"
+    )
+    assert calls[0][2]["headers"] == {
         "Authorization": "Bearer jwt-token",
+        "Accept": "text/event-stream",
     }
-    assert calls[0][1]["timeout"] == 120
-    assert calls[0][1]["stream"] is True
+    assert calls[0][2]["json"] == {
+        "messages": [{"role": "user", "content": "Hello"}],
+        "session_id": "SESSION-1",
+    }
 
     monkeypatch.setattr(
-        api_client.requests,
-        "post",
+        chat_client.httpx,
+        "stream",
         lambda *args, **kwargs: FakeResponse(status_code=401),
     )
 
     with pytest.raises(api_client.SessionExpiredError):
-        list(api_client.stream_chat(
-            messages=[{"role": "user", "content": "Hello"}],
+        list(chat_client.stream_chat(
+            message="Hello",
             session_id="SESSION-1",
             access_token="expired-token",
         ))

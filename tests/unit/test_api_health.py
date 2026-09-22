@@ -40,6 +40,9 @@ def test_readiness_reports_sanitized_degradation(monkeypatch):
     monkeypatch.setattr(health_routes, "_model_status", AsyncMock(
         return_value=DependencyStatus(status="healthy", latency_ms=2.0),
     ))
+    monkeypatch.setattr(health_routes, "_redis_status", AsyncMock(
+        return_value=DependencyStatus(status="healthy", latency_ms=1.0),
+    ))
 
     response = client.get("/api/v1/health/ready")
 
@@ -50,6 +53,21 @@ def test_readiness_reports_sanitized_degradation(monkeypatch):
         "latency_ms": None,
     }
     assert "error" not in response.text
+
+
+def test_redis_failure_is_reported_without_failing_readiness(monkeypatch):
+    for name in ("_database_status", "_checkpoint_status", "_model_status"):
+        monkeypatch.setattr(health_routes, name, AsyncMock(
+            return_value=DependencyStatus(status="healthy"),
+        ))
+    monkeypatch.setattr(health_routes, "_redis_status", AsyncMock(
+        return_value=DependencyStatus(status="unavailable"),
+    ))
+
+    response = client.get("/api/v1/health/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
+    assert response.json()["redis"]["status"] == "unavailable"
 
 def test_checkpoint_health_is_safe_on_failure(monkeypatch):
     saver = AsyncMock()

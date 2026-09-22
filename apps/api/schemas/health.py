@@ -14,3 +14,4 @@ class ReadinessResponse(BaseModel):
     database: DependencyStatus
     checkpoint_store: DependencyStatus
     model: DependencyStatus
+    redis: DependencyStatus

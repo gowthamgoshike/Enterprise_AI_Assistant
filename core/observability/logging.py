@@ -12,6 +12,7 @@ EXTRA_FIELDS = (
     "tool",
     "model",
     "latency_ms",
+    "model_queue_wait_ms",
     "status",
     "status_code",
     "error_code",
@@ -30,6 +31,7 @@ EXTRA_FIELDS = (
     "action_type",
     "decision",
     "result",
+    "cache_type",
 )
 
 

@@ -9,10 +9,15 @@ from typing import TypeVar
 import httpx
 from ollama import RequestError, ResponseError
 
+from ai.models.concurrency import model_semaphore
 from core.config import settings
 from core.errors import ModelUnavailableError
 from core.retry import retry_async
-from core.observability.metrics import MODEL_LATENCY, MODEL_REQUESTS_TOTAL
+from core.observability.metrics import (
+    MODEL_LATENCY,
+    MODEL_QUEUE_WAIT,
+    MODEL_REQUESTS_TOTAL,
+)
 
 
 T = TypeVar("T")
@@ -35,41 +40,53 @@ async def invoke_model_with_retry(
     """Apply a timeout and retry only known transient provider failures."""
 
     async def invoke_once() -> T:
-        started = time.perf_counter()
-        status = "failure"
-        try:
-            result = await asyncio.wait_for(
-                operation(),
-                timeout=settings.model_timeout_seconds,
-            )
-            status = "success"
-            return result
-        except ModelUnavailableError:
-            raise
-        except (TimeoutError, httpx.TimeoutException) as exc:
-            raise ModelUnavailableError("Model request timed out") from exc
-        except (httpx.NetworkError, ConnectionError, RequestError) as exc:
-            raise ModelUnavailableError() from exc
-        except ResponseError as exc:
-            if _is_transient_response_error(exc):
-                raise ModelUnavailableError() from exc
-            raise
-        finally:
-            duration_seconds = time.perf_counter() - started
-            MODEL_REQUESTS_TOTAL.labels(
-                model=MODEL_NAME,
-                status=status,
-            ).inc()
-            MODEL_LATENCY.labels(model=MODEL_NAME).observe(duration_seconds)
+        queued_at = time.perf_counter()
+        async with model_semaphore:
+            queue_wait_seconds = time.perf_counter() - queued_at
+            MODEL_QUEUE_WAIT.labels(model=MODEL_NAME).observe(queue_wait_seconds)
             logger.info(
-                "model_call_completed",
+                "model_slot_acquired",
                 extra={
-                    "event": "model_call",
+                    "event": "model_queue",
                     "model": MODEL_NAME,
-                    "status": status,
-                    "latency_ms": round(duration_seconds * 1000, 2),
+                    "model_queue_wait_ms": round(queue_wait_seconds * 1000, 2),
                 },
             )
+            started = time.perf_counter()
+            status = "failure"
+            try:
+                result = await asyncio.wait_for(
+                    operation(),
+                    timeout=settings.model_timeout_seconds,
+                )
+                status = "success"
+                return result
+            except ModelUnavailableError:
+                raise
+            except (TimeoutError, httpx.TimeoutException) as exc:
+                raise ModelUnavailableError("Model request timed out") from exc
+            except (httpx.NetworkError, ConnectionError, RequestError) as exc:
+                raise ModelUnavailableError() from exc
+            except ResponseError as exc:
+                if _is_transient_response_error(exc):
+                    raise ModelUnavailableError() from exc
+                raise
+            finally:
+                duration_seconds = time.perf_counter() - started
+                MODEL_REQUESTS_TOTAL.labels(
+                    model=MODEL_NAME,
+                    status=status,
+                ).inc()
+                MODEL_LATENCY.labels(model=MODEL_NAME).observe(duration_seconds)
+                logger.info(
+                    "model_call_completed",
+                    extra={
+                        "event": "model_call",
+                        "model": MODEL_NAME,
+                        "status": status,
+                        "latency_ms": round(duration_seconds * 1000, 2),
+                    },
+                )
 
     return await retry_async(
         invoke_once,

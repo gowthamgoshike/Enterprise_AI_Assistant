@@ -1,5 +1,3 @@
-import json
-
 import requests
 
 from apps.ui.config import API_BASE_URL
@@ -111,40 +109,3 @@ def submit_approval(
     )
     _raise_for_authenticated_request(response)
     return response.json()
-
-
-def stream_chat(
-    messages: list[dict],
-    session_id: str,
-    access_token: str,
-):
-
-    with requests.post(
-        (
-            f"{API_BASE_URL}"
-            "/api/v1/chat/stream"
-        ),
-        json={
-            "messages": messages,
-            "session_id": session_id,
-        },
-        headers=_authorization_headers(
-            access_token
-        ),
-        stream=True,
-        timeout=120,
-    ) as response:
-
-        _raise_for_authenticated_request(
-            response
-        )
-
-        for line in response.iter_lines():
-
-            if line:
-
-                yield json.loads(
-                    line.decode(
-                        "utf-8"
-                    )
-                )

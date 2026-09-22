@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI, Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -6,6 +7,9 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from ai.graphs.tool_agent_graph import build_enterprise_tool_graph
 from ai.memory.postgres_checkpointer import get_checkpoint_database_url
+from core.async_database import async_engine
+from core.config import settings
+from core.redis import redis_client
 from fastapi.middleware.cors import (
     CORSMiddleware,
 )
@@ -18,13 +22,14 @@ from apps.api.routes.auth import (
 from apps.api.routes.chat import (
     router as chat_router,
 )
+from apps.api.routes.chat_stream import router as chat_stream_router
 
 from apps.api.routes.health import (
     router as health_router,
 )
 
 
-configure_logging()
+configure_logging(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 
 
 @asynccontextmanager
@@ -41,6 +46,8 @@ async def lifespan(app: FastAPI):
         finally:
             del app.state.enterprise_graph
             del app.state.checkpoint_store
+            await async_engine.dispose()
+            await redis_client.aclose()
 
 
 app = FastAPI(
@@ -98,3 +105,4 @@ app.include_router(
 app.include_router(
     chat_router
 )
+app.include_router(chat_stream_router)

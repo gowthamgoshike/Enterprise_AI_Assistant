@@ -1,14 +1,45 @@
 services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build:
       context: ../..
       dockerfile: infrastructure/docker/api.Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://${DATABASE_USER:?Set DATABASE_USER in .env}:${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}@host.docker.internal:${DATABASE_PORT:-5432}/${DATABASE_NAME:?Set DATABASE_NAME in .env}
+      ASYNC_DATABASE_URL: postgresql+asyncpg://${DATABASE_USER}:${DATABASE_PASSWORD}@host.docker.internal:${DATABASE_PORT:-5432}/${DATABASE_NAME}
       LANGGRAPH_DATABASE_URL: postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@host.docker.internal:${DATABASE_PORT:-5432}/${DATABASE_NAME}
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL in .env}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-30}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-20}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MODEL_TIMEOUT_SECONDS: ${MODEL_TIMEOUT_SECONDS:-60}
+      MODEL_MAX_RETRIES: ${MODEL_MAX_RETRIES:-1}
+      MODEL_MAX_CONCURRENCY: ${MODEL_MAX_CONCURRENCY:-2}
+      MAX_TOOL_CALLS_PER_REQUEST: ${MAX_TOOL_CALLS_PER_REQUEST:-5}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
+      DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-10}
+      TOOL_MAX_RETRIES: ${TOOL_MAX_RETRIES:-2}
+      DATABASE_MAX_RETRIES: ${DATABASE_MAX_RETRIES:-2}
+      TOOL_TIMEOUT_SECONDS: ${TOOL_TIMEOUT_SECONDS:-30}
+      RETRY_BASE_DELAY_SECONDS: ${RETRY_BASE_DELAY_SECONDS:-0.5}
+      RETRY_MAX_DELAY_SECONDS: ${RETRY_MAX_DELAY_SECONDS:-4.0}
+      HEALTH_CHECK_TIMEOUT_SECONDS: ${HEALTH_CHECK_TIMEOUT_SECONDS:-5.0}
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -16,6 +47,9 @@ services:
       interval: 10s
       timeout: 6s
       retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
 
   ui:
     build:

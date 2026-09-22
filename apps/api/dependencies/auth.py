@@ -1,3 +1,5 @@
+import asyncio
+
 import jwt
 from fastapi import (
     Depends,
@@ -48,9 +50,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
-    user = find_user_by_id(
-        user_id
-    )
+    user = await asyncio.to_thread(find_user_by_id, user_id)
 
     if (
         not user

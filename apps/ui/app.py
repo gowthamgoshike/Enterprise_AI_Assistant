@@ -3,6 +3,7 @@ import uuid
 from pathlib import Path
 
 import requests
+import httpx
 import streamlit as st
 
 
@@ -21,24 +22,27 @@ from apps.ui.components.sidebar import (
 from apps.ui.services.api_client import (
     SessionExpiredError,
     login,
-    send_chat,
     submit_approval,
 )
+from apps.ui.services.chat_client import stream_chat
 
 
 def render_activity(
     tools_used: list[str],
     route: str | None = None,
     confidence: float | None = None,
+    latency_seconds: float | None = None,
 ) -> None:
-    if tools_used or route or confidence is not None:
-        with st.expander("Assistant activity"):
+    if tools_used or route or confidence is not None or latency_seconds is not None:
+        with st.expander("Assistant activity", expanded=True):
             if route:
                 st.write("Route:", route)
             if confidence is not None:
                 st.write("Routing confidence:", round(confidence, 2))
             for tool_name in tools_used:
                 st.write(f"Tool: {tool_name}")
+            if latency_seconds is not None:
+                st.write(f"Latency: {latency_seconds:.2f}s")
 
 
 st.set_page_config(
@@ -249,12 +253,13 @@ for message in st.session_state.messages:
             message.get("tools_used", []),
             message.get("route"),
             message.get("route_confidence"),
+            message.get("latency_seconds"),
         )
 
 
 pending_approval = st.session_state.pending_approval
 if pending_approval:
-    action = pending_approval["action"]
+    action = pending_approval.get("action", pending_approval)
     st.warning("Human approval required")
     st.write("Transaction:", action["transaction_id"])
     st.write(
@@ -302,6 +307,7 @@ if pending_approval:
                 "tools_used": approval_result.get("tools_used", []),
                 "route": approval_result.get("route"),
                 "route_confidence": approval_result.get("route_confidence"),
+                "latency_seconds": approval_result.get("latency_seconds"),
             })
             st.rerun()
         except SessionExpiredError:
@@ -346,48 +352,70 @@ if prompt:
         tools_used = []
         route = None
         confidence = None
+        latency = None
         approval_pending = False
+        assistant_response = ""
 
         try:
+            activity_box = st.empty()
+            answer_box = st.empty()
+            stream_state = {"done": {}, "approval": None, "error": None}
 
-            with st.spinner(
-                "Thinking..."
-            ):
-
-                MAX_CONTEXT_MESSAGES = 1
-
-                context_messages = (
-                    st.session_state.messages[
-                        -MAX_CONTEXT_MESSAGES:
-                    ]
-                )
-
-                result = send_chat(
-                    messages=[
-                        {"role": message["role"], "content": message["content"]}
-                        for message in context_messages
-                    ],
+            def token_stream():
+                saw_token = False
+                for event in stream_chat(
+                    message=prompt,
                     session_id=st.session_state.session_id,
                     access_token=st.session_state.access_token,
-                )
+                ):
+                    event_type = event["type"]
+                    data = event["data"]
+                    if event_type in {"status", "tool_start"}:
+                        activity_box.info(data.get("message", "Working..."))
+                    elif event_type == "tool_end":
+                        activity_box.empty()
+                    elif event_type == "token":
+                        saw_token = True
+                        yield data["text"]
+                    elif event_type == "approval_required":
+                        stream_state["approval"] = data
+                    elif event_type == "error":
+                        stream_state["error"] = data
+                        activity_box.error(data["message"])
+                    elif event_type == "done":
+                        stream_state["done"] = data
+                if not saw_token:
+                    yield ""
 
-            if result.get("status") == "approval_required":
-                st.session_state.pending_approval = result["approval_request"]
+            full_response = answer_box.write_stream(token_stream())
+            result = stream_state["done"]
+            if not result:
+                raise RuntimeError("The AI stream ended before completion")
+
+            if stream_state["approval"]:
+                st.session_state.pending_approval = stream_state["approval"]
                 assistant_response = (
                     "A refund proposal is ready and requires human approval."
                 )
+                answer_box.markdown(assistant_response)
+                activity_box.empty()
                 approval_pending = True
             else:
-                assistant_response = result["response"]
-
-            st.markdown(
-                assistant_response
-            )
+                assistant_response = (
+                    result.get("response")
+                    or full_response
+                    or (stream_state["error"] or {}).get("message", "")
+                )
+                if assistant_response != full_response:
+                    answer_box.markdown(assistant_response)
+                if stream_state["error"] is None:
+                    activity_box.empty()
 
             tools_used = result.get("tools_used", [])
             route = result.get("route")
             confidence = result.get("route_confidence")
-            render_activity(tools_used, route, confidence)
+            latency = result.get("latency_seconds")
+            render_activity(tools_used, route, confidence, latency)
 
             model_name = result.get(
                 "model"
@@ -399,17 +427,6 @@ if prompt:
                     model_name
                 )
 
-            latency = result.get(
-                "latency_seconds"
-            )
-
-            if latency is not None:
-
-                st.caption(
-                    f"Latency: "
-                    f"{latency:.2f}s"
-                )
-
         except SessionExpiredError:
 
             clear_authenticated_session()
@@ -418,7 +435,7 @@ if prompt:
             )
             st.rerun()
 
-        except requests.Timeout:
+        except (requests.Timeout, httpx.TimeoutException):
 
             assistant_response = (
                 "The AI service timed out."
@@ -428,7 +445,7 @@ if prompt:
                 assistant_response
             )
 
-        except requests.ConnectionError:
+        except (requests.ConnectionError, httpx.ConnectError):
 
             assistant_response = (
                 "Unable to connect "
@@ -439,7 +456,7 @@ if prompt:
                 assistant_response
             )
 
-        except requests.HTTPError:
+        except (requests.HTTPError, httpx.HTTPStatusError):
 
             assistant_response = (
                 "The request could not be completed."
@@ -467,6 +484,7 @@ if prompt:
             "tools_used": tools_used,
             "route": route,
             "route_confidence": confidence,
+            "latency_seconds": latency,
         }
     )
     if approval_pending:

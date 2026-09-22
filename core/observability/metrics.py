@@ -23,6 +23,11 @@ MODEL_LATENCY = Histogram(
     "Model request duration",
     ["model"],
 )
+MODEL_QUEUE_WAIT = Histogram(
+    "model_queue_wait_duration_seconds",
+    "Time waiting for a model inference slot",
+    ["model"],
+)
 TOOL_CALLS_TOTAL = Counter(
     "tool_calls_total",
     "Total tool calls",
@@ -67,4 +72,16 @@ AUTHORIZATION_DENIALS_TOTAL = Counter(
     "authorization_denials_total",
     "Authorization denials",
     ["role", "capability"],
+)
+CACHE_HITS_TOTAL = Counter(
+    "cache_hits_total", "Analytics cache hits", ["cache_type"],
+)
+CACHE_MISSES_TOTAL = Counter(
+    "cache_misses_total", "Analytics cache misses", ["cache_type"],
+)
+REDIS_ERRORS_TOTAL = Counter(
+    "redis_errors_total", "Redis operation failures", ["operation"],
+)
+RATE_LIMIT_DENIALS_TOTAL = Counter(
+    "rate_limit_denials_total", "Chat requests rejected by the shared limit",
 )

@@ -89,10 +89,19 @@ curl http://localhost:8000/api/v1/health/ready
 ```
 
 Open the UI at `http://localhost:8501`. The API is at
-`http://localhost:8000`. Compose starts only the API and UI. The API
+`http://localhost:8000`. Compose starts Redis, the API, and the UI. The API
 reaches the already running Postgres container through
 `host.docker.internal:${DATABASE_PORT}` and uses its existing users,
-transactions, and checkpoints. The UI reaches the API at `http://api:8000`.
+transactions, and checkpoints. It reaches Redis at `redis:6379` and Ollama
+at `host.docker.internal:11434`. The UI reaches the API at `http://api:8000`.
+Aggregate analytics results are cached for 30 seconds by default. If Redis is
+unavailable, analytics queries use PostgreSQL directly; readiness reports
+`degraded` but returns HTTP 200 when the core dependencies are healthy.
+Chat and streaming chat share a per-user Redis limit of 20 requests per 60
+seconds by default. Exceeding it returns HTTP 429; if Redis is unavailable,
+development requests continue. Set `RATE_LIMIT_REQUESTS` and
+`RATE_LIMIT_WINDOW_SECONDS` in `.env` to change the limit. Analytics cache
+keys start with `v1:analytics:`; chat limit keys start with `v1:rate:chat:`.
 No database initialization or account migration is needed. The images
 install `requirements.runtime.txt`, which omits the Spark, Kafka, and test
 packages used outside the API and UI.
@@ -106,7 +115,7 @@ docker compose --env-file .env -f infrastructure/docker/compose.yaml exec api \
 
 If that fails while the host curl works, configure Ollama to listen on an
 interface reachable from Docker Desktop without exposing it to the public
-network. To stop the API and UI without stopping the existing database, run:
+network. To stop the Compose services without stopping the existing database, run:
 
 ```bash
 docker compose --env-file .env -f infrastructure/docker/compose.yaml down
@@ -128,6 +137,7 @@ Compose API/UI so ports 8000 and 8501 are free:
 ```bash
 docker start enterprise-postgres
 docker compose --env-file .env -f infrastructure/docker/compose.yaml down
+docker compose --env-file .env -f infrastructure/docker/compose.yaml up -d redis
 ollama list
 curl http://localhost:11434/api/tags
 .venv/bin/python -m pip install -r requirements.runtime.txt
@@ -140,7 +150,7 @@ existing database's `DATABASE_HOST=localhost`, `DATABASE_PORT=5432`,
 `LANGGRAPH_DATABASE_URL` to the same database at `localhost:5432` and keep
 `JWT_SECRET_KEY` set. If you define `DATABASE_URL`, it takes precedence over
 the individual `DATABASE_*` settings and must also point to the host
-database.
+database. Set `REDIS_URL=redis://localhost:6379/0` for the host-run API.
 
 In one terminal, from the repository root:
 

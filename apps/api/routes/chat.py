@@ -1,4 +1,3 @@
-import json
 import logging
 import re
 import time
@@ -12,9 +11,6 @@ from fastapi import (
 )
 import httpx
 from langgraph.errors import GraphRecursionError
-from fastapi.responses import (
-    StreamingResponse,
-)
 
 from apps.api.schemas.chat import (
     ApprovalRequest,
@@ -22,6 +18,7 @@ from apps.api.schemas.chat import (
     ChatResponse,
 )
 from apps.api.dependencies.auth import get_current_user
+from apps.api.dependencies.rate_limit import get_rate_limited_chat_user
 from apps.api.schemas.auth import AuthenticatedUser
 
 from ai.graphs.tool_agent_graph import (
@@ -154,46 +151,6 @@ async def model_info():
     }
 
 
-@router.post("/stream")
-async def stream_chat(
-    payload: ChatRequest,
-    request: Request,
-    current_user: AuthenticatedUser = Depends(
-        get_current_user
-    ),
-):
-
-    result = await chat(
-        payload,
-        request,
-        current_user,
-    )
-
-    async def events():
-        yield json.dumps({
-            "model": result.model,
-            "message": {
-                "role": "assistant",
-                "content": result.response or "",
-            },
-            "done": False,
-        }) + "\n"
-        yield json.dumps({
-            "model": result.model,
-            "message": {"role": "assistant", "content": ""},
-            "done": True,
-            "tools_used": result.tools_used,
-            "route": result.route,
-            "route_confidence": result.route_confidence,
-            "status": result.status,
-            "approval_request": result.approval_request,
-            "error_code": result.error_code,
-            "retryable": result.retryable,
-        }) + "\n"
-
-    return StreamingResponse(events(), media_type="application/x-ndjson")
-
-
 @router.post(
     "",
     response_model=ChatResponse,
@@ -202,7 +159,7 @@ async def chat(
     payload: ChatRequest,
     request: Request,
     current_user: AuthenticatedUser = Depends(
-        get_current_user
+        get_rate_limited_chat_user
     ),
 ):
     context_request_id = get_request_id()

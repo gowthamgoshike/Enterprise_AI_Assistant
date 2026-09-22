@@ -1,15 +1,19 @@
 from ai.schemas.tools import TransactionLookupResult
 from ai.tools.context import ToolExecutionContext
 from services.analytics_service.service import (
-    fetch_revenue_summary,
-    fetch_top_products,
-    fetch_transaction_metrics,
+    fetch_revenue_summary_async,
+    fetch_top_products_async,
+    fetch_transaction_metrics_async,
 )
 from services.auth_service.authorization_service import require_permission
 from services.auth_service.exceptions import AuthorizationError
 from services.auth_service.models import UserRole
 from services.auth_service.permissions import Permission
 from services.transaction_service.identifiers import normalize_transaction_id
+from services.transaction_service.async_service import (
+    find_customer_transaction_async,
+    find_transaction_async,
+)
 from services.transaction_service.service import (
     fetch_customer_transactions,
     find_customer_transaction,
@@ -73,7 +77,30 @@ def execute_get_transaction(
     ).model_dump(mode="json")
 
 
-def execute_get_top_products(
+async def execute_get_transaction_async(
+    context: ToolExecutionContext,
+    transaction_id: str,
+) -> dict:
+    normalized_id = normalize_transaction_id(transaction_id)
+    if not normalized_id:
+        raise ValueError("transaction_id must not be blank")
+
+    if context.role is UserRole.CUSTOMER:
+        require_permission(context.role, Permission.READ_OWN_TRANSACTIONS)
+        if not context.customer_id:
+            raise AuthorizationError("Customer identity unavailable")
+        result = await find_customer_transaction_async(
+            transaction_id=normalized_id,
+            customer_id=context.customer_id,
+        )
+    else:
+        require_permission(context.role, Permission.READ_TRANSACTION)
+        result = await find_transaction_async(normalized_id)
+
+    return TransactionLookupResult.model_validate(result).model_dump(mode="json")
+
+
+async def execute_get_top_products(
     context: ToolExecutionContext,
     limit: int = 5,
 ) -> dict:
@@ -82,27 +109,27 @@ def execute_get_top_products(
         Permission.READ_ANALYTICS,
     )
     bounded_limit = max(1, min(limit, 20))
-    return fetch_top_products(limit=bounded_limit)
+    return await fetch_top_products_async(limit=bounded_limit)
 
 
-def execute_get_revenue_summary(
+async def execute_get_revenue_summary(
     context: ToolExecutionContext,
 ) -> dict:
     require_permission(
         context.role,
         Permission.READ_REVENUE,
     )
-    return fetch_revenue_summary()
+    return await fetch_revenue_summary_async()
 
 
-def execute_get_transaction_metrics(
+async def execute_get_transaction_metrics(
     context: ToolExecutionContext,
 ) -> dict:
     require_permission(
         context.role,
         Permission.READ_ANALYTICS,
     )
-    return fetch_transaction_metrics()
+    return await fetch_transaction_metrics_async()
 
 
 def execute_propose_refund(

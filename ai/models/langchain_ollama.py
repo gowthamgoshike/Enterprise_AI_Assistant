@@ -11,5 +11,6 @@ def get_chat_model():
         model=OLLAMA_MODEL,
         base_url=settings.ollama_base_url,
         temperature=0.1,
+        reasoning=False,
         client_kwargs={"timeout": settings.model_timeout_seconds},
     )

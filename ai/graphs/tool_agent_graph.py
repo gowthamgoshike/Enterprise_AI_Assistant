@@ -585,7 +585,39 @@ async def run_agent_graph(
         "configurable": {"thread_id": thread_id},
         "recursion_limit": GRAPH_RECURSION_LIMIT,
     }
-    initial_state: EnterpriseAgentState = {
+    result = await graph.ainvoke(
+        initial_agent_state(
+            user_message=user_message,
+            request_id=request_id,
+            user_id=user_id,
+            user_role=user_role,
+            customer_id=customer_id,
+        ),
+        config=config,
+    )
+    logger.info(
+        "request_id=%s graph=end tools_used=%s",
+        request_id,
+        result["current_turn_tools"],
+    )
+    if evaluation_mode:
+        # Copy the graph result so evaluation-only metadata never enters the
+        # checkpointed state or normal client responses.
+        result = dict(result)
+        result["evaluation_trace"] = build_evaluation_trace(result)
+    return result
+
+
+def initial_agent_state(
+    *,
+    user_message: str,
+    request_id: str,
+    user_id: str,
+    user_role: str,
+    customer_id: str | None,
+) -> EnterpriseAgentState:
+    """Construct the same trusted graph input for chat and streaming."""
+    return {
         "messages": [HumanMessage(content=user_message)],
         "request_id": request_id,
         "user_id": user_id,
@@ -601,21 +633,6 @@ async def run_agent_graph(
         "error_message": None,
         "retry_count": 0,
     }
-    result = await graph.ainvoke(
-        initial_state,
-        config=config,
-    )
-    logger.info(
-        "request_id=%s graph=end tools_used=%s",
-        request_id,
-        result["current_turn_tools"],
-    )
-    if evaluation_mode:
-        # Copy the graph result so evaluation-only metadata never enters the
-        # checkpointed state or normal client responses.
-        result = dict(result)
-        result["evaluation_trace"] = build_evaluation_trace(result)
-    return result
 
 
 async def resume_agent_graph(

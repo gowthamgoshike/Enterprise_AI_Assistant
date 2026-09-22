@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 import uuid
@@ -38,7 +39,8 @@ async def login(
 ):
     request_id = get_request_id() or f"REQ-{uuid.uuid4()}"
     start = time.perf_counter()
-    user = authenticate_user(
+    user = await asyncio.to_thread(
+        authenticate_user,
         email=request.email,
         password=request.password,
     )

@@ -6,6 +6,7 @@ from urllib.parse import quote
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
         "development"
     )
     database_url: str = Field(default="", repr=False)
+    async_database_url: str | None = Field(default=None, repr=False)
     database_host: str = "localhost"
     database_port: int = Field(default=5432, ge=1, le=65535)
     database_name: str = "enterprise_ai"
@@ -29,6 +31,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = Field(default=30, ge=1)
     api_base_url: str = "http://localhost:8000"
+    redis_url: str = "redis://redis:6379/0"
+    redis_cache_ttl_seconds: int = Field(default=30, ge=1)
+    rate_limit_requests: int = Field(default=20, ge=1)
+    rate_limit_window_seconds: int = Field(default=60, ge=1)
 
     model_timeout_seconds: int = Field(
         default=60,
@@ -39,19 +45,26 @@ class Settings(BaseSettings):
         ),
     )
     model_max_retries: int = Field(default=1, ge=0, le=5)
+    model_max_concurrency: int = Field(default=2, ge=1, le=8)
     max_tool_calls_per_request: int = Field(default=5, ge=1, le=20)
+    db_pool_size: int = Field(default=5, ge=1, le=50)
+    db_max_overflow: int = Field(default=5, ge=0, le=50)
+    db_pool_timeout_seconds: int = Field(default=10, ge=1, le=60)
     tool_max_retries: int = Field(default=2, ge=0, le=5)
     database_max_retries: int = Field(default=2, ge=0, le=5)
     tool_timeout_seconds: float = Field(default=30.0, gt=0)
     retry_base_delay_seconds: float = Field(default=0.5, gt=0)
     retry_max_delay_seconds: float = Field(default=4.0, gt=0)
     health_check_timeout_seconds: float = Field(default=5.0, gt=0)
-    log_level: str = "INFO"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = (
+        "INFO"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     @model_validator(mode="after")
@@ -67,6 +80,13 @@ class Settings(BaseSettings):
                 f"{self.database_host}:{self.database_port}/"
                 f"{quote(self.database_name, safe='')}"
             )
+        if not self.async_database_url:
+            sync_url = make_url(self.database_url)
+            if not sync_url.drivername.startswith("postgresql"):
+                raise ValueError("DATABASE_URL must use PostgreSQL")
+            self.async_database_url = sync_url.set(
+                drivername="postgresql+asyncpg"
+            ).render_as_string(hide_password=False)
         if self.retry_max_delay_seconds < self.retry_base_delay_seconds:
             raise ValueError(
                 "RETRY_MAX_DELAY_SECONDS must be greater than or equal to "
@@ -81,13 +101,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
-# Keep existing imports working while consumers migrate to settings.*.
-MODEL_TIMEOUT_SECONDS = settings.model_timeout_seconds
-MODEL_MAX_RETRIES = settings.model_max_retries
-TOOL_MAX_RETRIES = settings.tool_max_retries
-DATABASE_MAX_RETRIES = settings.database_max_retries
-TOOL_TIMEOUT_SECONDS = settings.tool_timeout_seconds
-RETRY_BASE_DELAY_SECONDS = settings.retry_base_delay_seconds
-RETRY_MAX_DELAY_SECONDS = settings.retry_max_delay_seconds
-HEALTH_CHECK_TIMEOUT_SECONDS = settings.health_check_timeout_seconds

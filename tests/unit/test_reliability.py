@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage
 from sqlalchemy.exc import OperationalError
 
 from ai.models import reliability as model_reliability
+from core.observability.metrics import MODEL_QUEUE_WAIT
 from ai.nodes import refund_execution_node, secure_tool_node
 from ai.schemas.actions import RefundExecutionResult
 from ai.tools.secure_registry import ToolDefinition
@@ -69,6 +70,45 @@ def test_model_timeout_is_retried_then_sanitized(monkeypatch):
 
     assert asyncio.run(model_reliability.invoke_model_with_retry(operation)) == "ok"
     assert operation.await_count == 2
+
+
+def test_model_concurrency_is_bounded_and_queue_wait_is_recorded(monkeypatch):
+    monkeypatch.setattr(model_reliability, "model_semaphore", asyncio.Semaphore(2))
+    active = 0
+    peak = 0
+    waits = MODEL_QUEUE_WAIT.labels(model=model_reliability.MODEL_NAME)
+    count_before = next(
+        sample.value
+        for metric in waits.collect()
+        for sample in metric.samples
+        if sample.name == "model_queue_wait_duration_seconds_count"
+    )
+
+    async def operation():
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.01)
+            return "ok"
+        finally:
+            active -= 1
+
+    async def run_all():
+        return await asyncio.gather(*(
+            model_reliability.invoke_model_with_retry(operation)
+            for _ in range(5)
+        ))
+
+    assert asyncio.run(run_all()) == ["ok"] * 5
+    assert peak == 2
+    count_after = next(
+        sample.value
+        for metric in waits.collect()
+        for sample in metric.samples
+        if sample.name == "model_queue_wait_duration_seconds_count"
+    )
+    assert count_after == count_before + 5
 
 
 def test_repository_translates_operational_error(monkeypatch):

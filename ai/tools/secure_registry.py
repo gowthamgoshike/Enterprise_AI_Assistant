@@ -5,7 +5,7 @@ from ai.tools.secure_executors import (
     execute_get_my_transactions,
     execute_get_revenue_summary,
     execute_get_top_products,
-    execute_get_transaction,
+    execute_get_transaction_async,
     execute_get_transaction_metrics,
     execute_propose_refund,
 )
@@ -30,7 +30,7 @@ SECURE_TOOL_REGISTRY = {
     ),
     "get_transaction": ToolDefinition(
         name="get_transaction",
-        function=execute_get_transaction,
+        function=execute_get_transaction_async,
         # Authorization is role-sensitive: customers receive ownership-scoped
         # access while analysts and admins require READ_TRANSACTION.
         permission=None,

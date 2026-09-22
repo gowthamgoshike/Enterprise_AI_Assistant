@@ -14,9 +14,11 @@ langchain-ollama
 langgraph
 langgraph-checkpoint-postgres
 
-sqlalchemy
+sqlalchemy[asyncio]
 psycopg2-binary
 psycopg[binary]
+asyncpg
+redis
 
 pyjwt[crypto]==2.11.0
 pwdlib[argon2]==0.3.1

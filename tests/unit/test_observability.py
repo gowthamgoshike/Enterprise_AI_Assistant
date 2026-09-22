@@ -131,6 +131,7 @@ def test_http_request_id_and_metrics_endpoint():
     assert "http_requests_total" in metrics.text
     assert "http_request_duration_seconds" in metrics.text
     assert "model_requests_total" in metrics.text
+    assert "model_queue_wait_duration_seconds" in metrics.text
     assert "tool_calls_total" in metrics.text
     assert "agent_errors_total" in metrics.text
     assert "approval_decisions_total" in metrics.text
