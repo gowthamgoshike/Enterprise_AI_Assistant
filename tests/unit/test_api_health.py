@@ -47,7 +47,7 @@ def test_readiness_reports_sanitized_degradation(monkeypatch):
     response = client.get("/api/v1/health/ready")
 
     assert response.status_code == 503
-    assert response.json()["status"] == "degraded"
+    assert response.json()["status"] == "not_ready"
     assert response.json()["database"] == {
         "status": "unavailable",
         "latency_ms": None,

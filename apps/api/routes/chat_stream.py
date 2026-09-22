@@ -17,7 +17,7 @@ from core.observability.context import (
 )
 
 
-router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
+router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 @router.post("/stream", response_class=EventSourceResponse)
@@ -33,11 +33,20 @@ async def stream_chat(
     else:
         set_user_context(current_user.user_id)
 
-    async for event in stream_agent_response(
+    event_stream = stream_agent_response(
         user_message=payload.messages[-1].content,
         current_user=current_user,
         session_id=payload.session_id,
         request_id=request_id,
         graph=request.app.state.enterprise_graph,
-    ):
-        yield ServerSentEvent(event=event.type, data=event.model_dump(mode="json"))
+    )
+    try:
+        async for event in event_stream:
+            if await request.is_disconnected():
+                break
+            yield ServerSentEvent(
+                event=event.type,
+                data=event.model_dump(mode="json"),
+            )
+    finally:
+        await event_stream.aclose()

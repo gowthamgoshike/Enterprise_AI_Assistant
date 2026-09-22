@@ -4,7 +4,6 @@ import logging
 
 import jwt
 import pytest
-from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 
@@ -13,6 +12,7 @@ from apps.api.dependencies.auth import get_current_user
 from apps.api.main import app
 from apps.api.routes import auth as auth_routes
 from apps.api.schemas.auth import AuthenticatedUser
+from core.errors import InvalidTokenError
 from services.auth_service import auth_service, jwt_service
 from services.auth_service.models import UserRole
 from services.auth_service.password_service import (
@@ -177,7 +177,11 @@ def test_login_uses_generic_error_for_invalid_credentials(monkeypatch):
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid email or password"}
+    assert response.json()["error"] == {
+        "code": "invalid_credentials",
+        "message": "The email or password is incorrect.",
+        "retryable": False,
+    }
 
 
 @pytest.mark.parametrize("login_succeeds", [True, False])
@@ -299,17 +303,10 @@ def test_current_user_is_loaded_from_verified_token_subject(monkeypatch):
     )
 
 
-@pytest.mark.parametrize(
-    ("payload", "expected_detail"),
-    [
-        ({}, "Invalid or expired token"),
-        ({"other": "claim"}, "Invalid or expired token"),
-    ],
-)
+@pytest.mark.parametrize("payload", [{}, {"other": "claim"}])
 def test_current_user_rejects_invalid_or_subjectless_token(
     monkeypatch,
     payload,
-    expected_detail,
 ):
     if payload:
         monkeypatch.setattr(
@@ -327,7 +324,7 @@ def test_current_user_rejects_invalid_or_subjectless_token(
             reject_token,
         )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidTokenError) as exc_info:
         asyncio.run(get_current_user(
             HTTPAuthorizationCredentials(
                 scheme="Bearer",
@@ -335,8 +332,7 @@ def test_current_user_rejects_invalid_or_subjectless_token(
             )
         ))
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == expected_detail
+    assert exc_info.value.code == "invalid_token"
 
 
 def test_current_user_rejects_inactive_database_user(monkeypatch):
@@ -357,7 +353,7 @@ def test_current_user_rejects_inactive_database_user(monkeypatch):
         },
     )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(InvalidTokenError) as exc_info:
         asyncio.run(get_current_user(
             HTTPAuthorizationCredentials(
                 scheme="Bearer",
@@ -365,8 +361,7 @@ def test_current_user_rejects_inactive_database_user(monkeypatch):
             )
         ))
 
-    assert exc_info.value.status_code == 401
-    assert exc_info.value.detail == "Invalid or inactive user"
+    assert exc_info.value.code == "invalid_token"
 
 
 def test_chat_requires_bearer_token():
@@ -435,7 +430,7 @@ def test_chat_rejects_invalid_bearer_token_before_graph_or_tools(monkeypatch):
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid or expired token"}
+    assert response.json()["error"]["code"] == "invalid_token"
     user_lookup.assert_not_called()
     graph_run.assert_not_awaited()
     transaction_tool_lookup.assert_not_called()
@@ -491,6 +486,6 @@ def test_chat_rejects_modified_signed_token_before_user_or_graph(monkeypatch):
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid or expired token"}
+    assert response.json()["error"]["code"] == "invalid_token"
     user_lookup.assert_not_called()
     graph_run.assert_not_awaited()

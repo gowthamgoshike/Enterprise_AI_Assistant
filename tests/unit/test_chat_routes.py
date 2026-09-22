@@ -57,7 +57,11 @@ def test_graph_failure_logs_metadata_and_returns_safe_error(monkeypatch, caplog)
             "session_id": "logging-test",
         })
     assert response.status_code == 500
-    assert response.json() == {"detail": "Agent execution failed."}
+    assert response.json()["error"] == {
+        "code": "agent_execution_failed",
+        "message": "The assistant could not complete the request.",
+        "retryable": False,
+    }
     record = next(r for r in caplog.records if r.msg.startswith("agent_request"))
     assert record.thread_id == "logging-test"
     assert record.message_length == len("sensitive question")
@@ -339,7 +343,8 @@ def test_chat_step_limit_returns_safe_error(monkeypatch):
         {"role": "user", "content": "Repeat forever"}
     ], "session_id": "conversation-limit"})
     assert response.status_code == 503
-    assert "execution limit" in response.json()["detail"]
+    assert response.json()["error"]["code"] == "agent_recursion_limit"
+    assert "execution limit" in response.json()["error"]["message"]
     assert "internal details" not in response.text
 
 
@@ -439,6 +444,8 @@ def test_approval_endpoint_rejects_session_without_pending_action(monkeypatch):
     })
 
     assert response.status_code == 409
-    assert response.json() == {
-        "detail": "No pending approval exists for this session."
+    assert response.json()["error"] == {
+        "code": "approval_not_pending",
+        "message": "No pending approval exists for this session.",
+        "retryable": False,
     }

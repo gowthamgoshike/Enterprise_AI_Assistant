@@ -6,11 +6,10 @@ import uuid
 from fastapi import (
     APIRouter,
     Depends,
-    HTTPException,
-    status,
 )
 
 from apps.api.dependencies.auth import get_current_user
+from apps.api.dependencies.rate_limit import rate_limit_login
 from apps.api.schemas.auth import (
     AuthenticatedUser,
     LoginRequest,
@@ -19,6 +18,7 @@ from apps.api.schemas.auth import (
 from services.auth_service.auth_service import authenticate_user
 from services.auth_service.jwt_service import create_access_token
 from core.observability.context import get_request_id, set_user_context
+from core.errors import InvalidCredentialsError
 
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ router = APIRouter(
 )
 async def login(
     request: LoginRequest,
+    _: None = Depends(rate_limit_login),
 ):
     request_id = get_request_id() or f"REQ-{uuid.uuid4()}"
     start = time.perf_counter()
@@ -57,10 +58,7 @@ async def login(
                 "latency_ms": round((time.perf_counter() - start) * 1000, 2),
             },
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password",
-        )
+        raise InvalidCredentialsError()
 
     access_token = create_access_token(
         user_id=user["user_id"],

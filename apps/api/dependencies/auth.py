@@ -3,9 +3,7 @@ import asyncio
 import jwt
 from fastapi import (
     Depends,
-    HTTPException,
     Request,
-    status,
 )
 from fastapi.security import (
     HTTPAuthorizationCredentials,
@@ -16,17 +14,20 @@ from apps.api.schemas.auth import AuthenticatedUser
 from services.auth_service.jwt_service import decode_access_token
 from services.auth_service.repository import find_user_by_id
 from core.observability.context import set_user_context
+from core.errors import AuthenticationRequiredError, InvalidTokenError
 
 
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(
+    credentials: HTTPAuthorizationCredentials | None = Depends(
         bearer_scheme
     ),
     request: Request = None,
 ) -> AuthenticatedUser:
+    if credentials is None:
+        raise AuthenticationRequiredError()
     token = credentials.credentials
 
     try:
@@ -44,11 +45,7 @@ async def get_current_user(
         jwt.InvalidTokenError,
         ValueError,
     ) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise InvalidTokenError() from exc
 
     user = await asyncio.to_thread(find_user_by_id, user_id)
 
@@ -56,11 +53,7 @@ async def get_current_user(
         not user
         or not user["is_active"]
     ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or inactive user",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise InvalidTokenError()
 
     authenticated_user = AuthenticatedUser(
         user_id=user["user_id"],

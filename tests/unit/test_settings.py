@@ -18,6 +18,8 @@ def test_settings_are_cached_and_hide_secrets():
         "postgresql+asyncpg://user:password@localhost/test"
     )
     assert configured.jwt_secret == "test-secret"
+    assert configured.allowed_origins == ["http://localhost:8501"]
+    assert configured.max_request_bytes == 65536
     assert "test-secret" not in repr(configured)
     assert "password" not in repr(configured)
 
@@ -46,6 +48,7 @@ def test_legacy_database_parts_and_jwt_name_work():
         ("DB_MAX_OVERFLOW", 51),
         ("DB_POOL_TIMEOUT_SECONDS", 0),
         ("APP_ENV", "unknown"),
+        ("MAX_REQUEST_BYTES", 100),
     ],
 )
 def test_invalid_settings_are_rejected(name, value):

@@ -32,6 +32,8 @@ EXTRA_FIELDS = (
     "job_id",
     "job_type",
     "stage",
+    "thread_id",
+    "route",
     "decision",
     "result",
     "cache_type",

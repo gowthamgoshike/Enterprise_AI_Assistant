@@ -8,10 +8,12 @@ from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
 from apps.api.dependencies.auth import get_current_user
+from apps.api.dependencies import rate_limit as rate_limit_dependencies
 from apps.api.main import app
 from apps.api.routes import chat as chat_routes
 from apps.api.schemas.auth import AuthenticatedUser
 from core import rate_limit
+from core.errors import RateLimitError
 from services.auth_service.models import UserRole
 
 
@@ -94,9 +96,12 @@ def test_chat_and_stream_share_authenticated_limit(monkeypatch):
         app.dependency_overrides.pop(get_current_user, None)
 
     assert denied.status_code == 429
-    assert denied.json() == {
-        "detail": "Too many requests. Please try again shortly.",
+    assert denied.json()["error"] == {
+        "code": "rate_limit_exceeded",
+        "message": "Too many requests. Please try again shortly.",
+        "retryable": True,
     }
+    assert denied.json()["request_id"] == denied.headers["X-Request-ID"]
     assert denied.headers["Retry-After"] == "60"
     assert redis.counts == {"v1:rate:chat:TRUSTED-USER": 2}
     assert graph.await_count == 1
@@ -111,3 +116,70 @@ def test_unauthenticated_request_does_not_touch_redis(monkeypatch):
     })
     assert response.status_code in (401, 403)
     assert redis.counts == {}
+
+
+@pytest.mark.asyncio
+async def test_endpoint_specific_limits_use_separate_scopes(monkeypatch):
+    calls = []
+
+    async def allowed(subject, **options):
+        calls.append((subject, options))
+        return True
+
+    monkeypatch.setattr(rate_limit_dependencies, "allow_request", allowed)
+    monkeypatch.setattr(
+        rate_limit_dependencies,
+        "settings",
+        SimpleNamespace(
+            rate_limit_window_seconds=60,
+            approval_rate_limit_requests=10,
+            job_rate_limit_requests=5,
+            login_rate_limit_requests=5,
+        ),
+    )
+    user = AuthenticatedUser(
+        user_id="USER-LIMITS",
+        email="limits@example.com",
+        role=UserRole.ADMIN,
+    )
+
+    await rate_limit_dependencies.get_rate_limited_chat_user(user)
+    await rate_limit_dependencies.get_rate_limited_approval_user(user)
+    await rate_limit_dependencies.get_rate_limited_job_user(user)
+    await rate_limit_dependencies.rate_limit_login(
+        SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))
+    )
+
+    assert calls == [
+        ("USER-LIMITS", {"scope": "chat", "limit": None}),
+        ("USER-LIMITS", {"scope": "approval", "limit": 10}),
+        ("USER-LIMITS", {"scope": "jobs", "limit": 5}),
+        ("127.0.0.1", {"scope": "login", "limit": 5}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_endpoint_limit_raises_stable_rate_limit_error(monkeypatch):
+    monkeypatch.setattr(
+        rate_limit_dependencies,
+        "allow_request",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        rate_limit_dependencies,
+        "settings",
+        SimpleNamespace(
+            rate_limit_window_seconds=30,
+            job_rate_limit_requests=5,
+        ),
+    )
+    user = AuthenticatedUser(
+        user_id="USER-LIMITED",
+        email="limited@example.com",
+        role=UserRole.ADMIN,
+    )
+
+    with pytest.raises(RateLimitError) as exc_info:
+        await rate_limit_dependencies.get_rate_limited_job_user(user)
+
+    assert exc_info.value.retry_after_seconds == 30

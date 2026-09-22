@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -13,21 +13,13 @@ from core.redis import redis_client
 from fastapi.middleware.cors import (
     CORSMiddleware,
 )
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from apps.api.logging_config import configure_logging
-from apps.api.middleware.request_context import request_context_middleware
-from apps.api.routes.auth import (
-    router as auth_router,
-)
-from apps.api.routes.chat import (
-    router as chat_router,
-)
-from apps.api.routes.chat_stream import router as chat_stream_router
-
-from apps.api.routes.health import (
-    router as health_router,
-)
-from apps.api.routes.jobs import router as jobs_router
+from apps.api.error_handlers import register_exception_handlers
+from apps.api.middleware.request_id import RequestIDMiddleware
+from apps.api.middleware.request_limits import RequestSizeLimitMiddleware
+from apps.api.middleware.security_headers import SecurityHeadersMiddleware
+from apps.api.routes.metrics import router as metrics_router
+from apps.api.routes.router import api_router
 
 
 configure_logging(level=getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -55,20 +47,32 @@ app = FastAPI(
     title="Enterprise AI Assistant API",
     version="0.1.0",
     lifespan=lifespan,
+    debug=False,
+    docs_url=None if settings.app_env == "production" else "/docs",
+    redoc_url=None if settings.app_env == "production" else "/redoc",
+    openapi_url=None if settings.app_env == "production" else "/openapi.json",
 )
+
+
+register_exception_handlers(app)
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8501",
-    ],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
-
-app.middleware("http")(request_context_middleware)
+app.add_middleware(
+    RequestSizeLimitMiddleware,
+    max_request_bytes=settings.max_request_bytes,
+)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=settings.app_env == "production",
+)
+app.add_middleware(RequestIDMiddleware)
 
 
 @app.get("/")
@@ -82,33 +86,5 @@ async def root():
     }
 
 
-@app.get(
-    "/metrics",
-    tags=["Observability"],
-    summary="Get Prometheus metrics",
-)
-async def metrics():
-    return Response(
-        content=generate_latest(),
-        media_type=CONTENT_TYPE_LATEST,
-    )
-
-
-app.include_router(
-    health_router
-)
-
-app.include_router(
-    auth_router,
-    prefix="/api/v1",
-)
-
-app.include_router(
-    jobs_router,
-    prefix="/api/v1",
-)
-
-app.include_router(
-    chat_router
-)
-app.include_router(chat_stream_router)
+app.include_router(api_router, prefix="/api/v1")
+app.include_router(metrics_router)

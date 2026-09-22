@@ -84,7 +84,7 @@ def test_bad_login_returns_401(client, auth_users):
     response = login(client, password="incorrect-password")
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid email or password"}
+    assert response.json()["error"]["code"] == "invalid_credentials"
 
 
 def test_chat_without_jwt_returns_401(client, auth_users):
@@ -151,4 +151,4 @@ def test_inactive_user_returns_401(client, auth_users):
 
     assert login_response.status_code == 401
     assert me_response.status_code == 401
-    assert me_response.json() == {"detail": "Invalid or inactive user"}
+    assert me_response.json()["error"]["code"] == "invalid_token"

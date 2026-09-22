@@ -31,10 +31,15 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = Field(default=30, ge=1)
     api_base_url: str = "http://localhost:8000"
+    allowed_origins: list[str] = ["http://localhost:8501"]
+    max_request_bytes: int = Field(default=64 * 1024, ge=1024, le=1024 * 1024)
     redis_url: str = "redis://redis:6379/0"
     redis_cache_ttl_seconds: int = Field(default=30, ge=1)
     rate_limit_requests: int = Field(default=20, ge=1)
     rate_limit_window_seconds: int = Field(default=60, ge=1)
+    login_rate_limit_requests: int = Field(default=5, ge=1)
+    job_rate_limit_requests: int = Field(default=5, ge=1)
+    approval_rate_limit_requests: int = Field(default=10, ge=1)
 
     model_timeout_seconds: int = Field(
         default=60,

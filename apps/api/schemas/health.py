@@ -9,7 +9,7 @@ class DependencyStatus(BaseModel):
 
 
 class ReadinessResponse(BaseModel):
-    status: Literal["ready", "degraded"]
+    status: Literal["ready", "degraded", "not_ready"]
     api: DependencyStatus
     database: DependencyStatus
     checkpoint_store: DependencyStatus

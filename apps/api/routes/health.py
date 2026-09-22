@@ -14,7 +14,7 @@ from data.database.connection import engine
 
 OLLAMA_BASE_URL = settings.ollama_base_url
 
-router = APIRouter(prefix="/api/v1/health", tags=["health"])
+router = APIRouter(prefix="/health", tags=["health"])
 
 
 @router.get("")
@@ -117,7 +117,7 @@ async def readiness(request: Request):
         status=(
             "ready"
             if core_ready and redis.status == "healthy"
-            else "degraded"
+            else "degraded" if core_ready else "not_ready"
         ),
         api=DependencyStatus(status="healthy"),
         database=database,

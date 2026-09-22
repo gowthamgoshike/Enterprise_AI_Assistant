@@ -1,4 +1,4 @@
-"""Shared fixed-window chat limit backed by Redis."""
+"""Endpoint-scoped fixed-window limits backed by Redis."""
 
 import logging
 
@@ -20,11 +20,19 @@ return count
 """
 
 
-async def allow_request(user_id: str) -> bool:
-    key = f"v1:rate:chat:{user_id}"
+async def allow_request(
+    subject: str,
+    *,
+    scope: str = "chat",
+    limit: int | None = None,
+    window_seconds: int | None = None,
+) -> bool:
+    request_limit = limit or settings.rate_limit_requests
+    window = window_seconds or settings.rate_limit_window_seconds
+    key = f"v1:rate:{scope}:{subject}"
     try:
         count = await redis_client.eval(
-            INCREMENT_WITH_EXPIRY, 1, key, settings.rate_limit_window_seconds,
+            INCREMENT_WITH_EXPIRY, 1, key, window,
         )
     except Exception:
         REDIS_ERRORS_TOTAL.labels(operation="rate_limit").inc()
@@ -33,10 +41,11 @@ async def allow_request(user_id: str) -> bool:
         })
         return True
 
-    allowed = int(count) <= settings.rate_limit_requests
+    allowed = int(count) <= request_limit
     if not allowed:
         RATE_LIMIT_DENIALS_TOTAL.inc()
-        logger.info("chat_rate_limit_denied", extra={
-            "event": "chat_rate_limit", "result": "denied",
+        logger.info("api_rate_limit_denied", extra={
+            "event": "api_rate_limit", "result": "denied",
+            "operation": scope,
         })
     return allowed

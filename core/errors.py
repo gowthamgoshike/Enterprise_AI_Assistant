@@ -30,6 +30,30 @@ class BusinessRuleError(NonRetryableError):
     """Valid request that violates a business rule."""
 
 
+class AuthenticationRequiredError(SecurityError):
+    code = "authentication_required"
+    safe_message = "Authentication is required."
+
+
+class InvalidTokenError(SecurityError):
+    code = "invalid_token"
+    safe_message = "Authentication is required."
+
+
+class InvalidCredentialsError(SecurityError):
+    code = "invalid_credentials"
+    safe_message = "The email or password is incorrect."
+
+
+class RateLimitError(RetryableError):
+    code = "rate_limit_exceeded"
+    safe_message = "Too many requests. Please try again shortly."
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__()
+        self.retry_after_seconds = retry_after_seconds
+
+
 class ModelUnavailableError(RetryableError):
     code = "model_unavailable"
     safe_message = "The AI service is temporarily unavailable."

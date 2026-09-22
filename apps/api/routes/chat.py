@@ -17,8 +17,10 @@ from apps.api.schemas.chat import (
     ChatRequest,
     ChatResponse,
 )
-from apps.api.dependencies.auth import get_current_user
-from apps.api.dependencies.rate_limit import get_rate_limited_chat_user
+from apps.api.dependencies.rate_limit import (
+    get_rate_limited_approval_user,
+    get_rate_limited_chat_user,
+)
 from apps.api.schemas.auth import AuthenticatedUser
 
 from ai.graphs.tool_agent_graph import (
@@ -137,7 +139,7 @@ def _chat_response_from_result(
 
 
 router = APIRouter(
-    prefix="/api/v1/chat",
+    prefix="/chat",
     tags=["chat"],
 )
 
@@ -223,14 +225,25 @@ async def chat(
         logger.warning("request_id=%s error=agent_step_limit", request_id)
         raise HTTPException(
             status_code=503,
-            detail="The assistant reached its execution limit. Please narrow your request.",
+            detail={
+                "code": "agent_recursion_limit",
+                "message": (
+                    "The assistant reached its execution limit. "
+                    "Please narrow your request."
+                ),
+                "retryable": False,
+            },
         ) from exc
 
     except httpx.TimeoutException as exc:
 
         raise HTTPException(
             status_code=504,
-            detail="Model request timed out",
+            detail={
+                "code": "model_timeout",
+                "message": "The AI service timed out.",
+                "retryable": True,
+            },
         ) from exc
 
     except ModelUnavailableError as exc:
@@ -250,7 +263,11 @@ async def chat(
 
         raise HTTPException(
             status_code=502,
-            detail="Model service unavailable",
+            detail={
+                "code": "model_unavailable",
+                "message": "The AI service is temporarily unavailable.",
+                "retryable": True,
+            },
         ) from exc
 
     except Exception as exc:
@@ -277,7 +294,11 @@ async def chat(
         )
         raise HTTPException(
             status_code=500,
-            detail="Agent execution failed.",
+            detail={
+                "code": "agent_execution_failed",
+                "message": "The assistant could not complete the request.",
+                "retryable": False,
+            },
         ) from exc
 
 
@@ -288,7 +309,7 @@ async def chat(
 async def submit_approval(
     payload: ApprovalRequest,
     request: Request,
-    current_user: AuthenticatedUser = Depends(get_current_user),
+    current_user: AuthenticatedUser = Depends(get_rate_limited_approval_user),
 ):
     context_request_id = get_request_id()
     request_id = context_request_id or f"REQ-{uuid.uuid4()}"
@@ -317,22 +338,38 @@ async def submit_approval(
         AGENT_ERRORS_TOTAL.labels(error_code="agent_step_limit").inc()
         raise HTTPException(
             status_code=503,
-            detail="The assistant reached its execution limit.",
+            detail={
+                "code": "agent_recursion_limit",
+                "message": "The assistant reached its execution limit.",
+                "retryable": False,
+            },
         ) from exc
     except PendingApprovalNotFoundError as exc:
         raise HTTPException(
             status_code=409,
-            detail="No pending approval exists for this session.",
+            detail={
+                "code": "approval_not_pending",
+                "message": "No pending approval exists for this session.",
+                "retryable": False,
+            },
         ) from exc
     except httpx.TimeoutException as exc:
         raise HTTPException(
             status_code=504,
-            detail="Model request timed out",
+            detail={
+                "code": "model_timeout",
+                "message": "The AI service timed out.",
+                "retryable": True,
+            },
         ) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
-            detail="Model service unavailable",
+            detail={
+                "code": "model_unavailable",
+                "message": "The AI service is temporarily unavailable.",
+                "retryable": True,
+            },
         ) from exc
     except Exception as exc:
         if is_database_unavailable_error(exc):
@@ -359,5 +396,9 @@ async def submit_approval(
         )
         raise HTTPException(
             status_code=500,
-            detail="Approval processing failed.",
+            detail={
+                "code": "approval_processing_failed",
+                "message": "The approval could not be processed.",
+                "retryable": False,
+            },
         ) from exc
