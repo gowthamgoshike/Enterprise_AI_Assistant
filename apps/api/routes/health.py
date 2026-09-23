@@ -1,18 +1,16 @@
 import asyncio
 import time
 
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from apps.api.schemas.health import DependencyStatus, ReadinessResponse
+from ai.models.dependencies import get_model_gateway
 from core.config import settings
 from core.redis import check_redis
 from data.database.connection import engine
 
-
-OLLAMA_BASE_URL = settings.ollama_base_url
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -69,13 +67,8 @@ async def _checkpoint_status(request: Request) -> DependencyStatus:
 
 async def _model_status() -> DependencyStatus:
     started = time.perf_counter()
-    try:
-        async with httpx.AsyncClient(
-            timeout=settings.health_check_timeout_seconds
-        ) as client:
-            response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
-            response.raise_for_status()
-    except Exception:
+    healthy = await get_model_gateway().health_check()
+    if not healthy:
         return DependencyStatus(status="unavailable")
     return DependencyStatus(
         status="healthy",
@@ -133,9 +126,11 @@ async def readiness(request: Request):
 @router.get("/model")
 async def model_health():
     status = await _model_status()
+    info = get_model_gateway().metadata
     return {
         "status": "ok" if status.status == "healthy" else "unavailable",
-        "model_service": "ollama",
+        "provider": str(info.provider),
+        "model": info.model,
         "latency_ms": status.latency_ms,
     }
 

@@ -2,11 +2,11 @@ import json
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-from ai.models.langchain_ollama import get_chat_model
+from ai.models.dependencies import get_model_gateway
 from ai.tools.langchain_registry import ANALYTICS_TOOLS, ANALYTICS_TOOL_MAP
 
 
-model = get_chat_model()
+model = get_model_gateway()
 analytics_model = model.bind_tools(ANALYTICS_TOOLS)
 
 ANALYTICS_SYSTEM_PROMPT = """

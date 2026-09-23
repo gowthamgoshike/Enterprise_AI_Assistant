@@ -10,8 +10,8 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
-from ai.models.langchain_ollama import (
-    get_chat_model,
+from ai.models.dependencies import (
+    get_model_gateway,
 )
 from ai.schemas.agent import (
     GetTransactionArguments,
@@ -79,7 +79,7 @@ logger = logging.getLogger(
 )
 
 
-model = get_chat_model()
+model = get_model_gateway()
 
 model_with_tools = (
     model.bind_tools(

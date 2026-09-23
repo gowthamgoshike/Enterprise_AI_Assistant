@@ -23,7 +23,8 @@ from ai.context.manager import (
     truncate_tool_result,
 )
 from ai.context.summarizer import should_summarize, summarize_messages
-from ai.models.langchain_ollama import get_chat_model
+from ai.models.dependencies import get_model_gateway
+from ai.models.gateway import BoundModel
 from ai.models.reliability import invoke_model_with_retry
 from ai.nodes.action_approval_nodes import action_rejected_node
 from ai.nodes.human_approval_node import human_approval_node
@@ -221,7 +222,9 @@ def _requires_transaction_status_lookup(message: HumanMessage) -> bool:
 
 def _is_tool_bypass_instruction(message: HumanMessage) -> bool:
     text = _message_text(message).casefold()
-    return any(phrase in text for phrase in TOOL_BYPASS_PHRASES)
+    return any(phrase in text for phrase in TOOL_BYPASS_PHRASES) or bool(
+        re.search(r"(?:do not|don't|never)\s+call\s+(?:any\s+)?tools", text)
+    )
 
 
 def _forced_status_tool_call(
@@ -230,7 +233,13 @@ def _forced_status_tool_call(
     latest_message = state["messages"][-1]
     if not isinstance(latest_message, HumanMessage):
         return None
-    if not _requires_transaction_status_lookup(latest_message):
+    has_transaction_id = bool(
+        TRANSACTION_ID_PATTERN.search(_message_text(latest_message))
+    )
+    requires_lookup = _requires_transaction_status_lookup(latest_message) or (
+        has_transaction_id and _is_tool_bypass_instruction(latest_message)
+    )
+    if not requires_lookup:
         return None
     role = UserRole(state["user_role"])
     can_read_transaction = (
@@ -380,7 +389,7 @@ async def agent_node(state: EnterpriseAgentState) -> dict:
     context_messages.extend(build_model_context(state))
 
     role = UserRole(state["user_role"])
-    base_model = model if model is not None else get_chat_model()
+    base_model = model if model is not None else get_model_gateway()
     secured_model = (
         model_with_tools
         if model_with_tools is not None
@@ -393,11 +402,19 @@ async def agent_node(state: EnterpriseAgentState) -> dict:
         retries += 1
 
     try:
-        response = await invoke_model_with_retry(
-            lambda: secured_model.ainvoke(context_messages),
-            request_id=state["request_id"],
-            on_retry=record_retry,
-        )
+        if isinstance(secured_model, BoundModel):
+            response = await secured_model.ainvoke(
+                context_messages,
+                request_id=state["request_id"],
+                on_retry=record_retry,
+            )
+        else:
+            # Preserve the injection seam for tests and custom LangChain models.
+            response = await invoke_model_with_retry(
+                lambda: secured_model.ainvoke(context_messages),
+                request_id=state["request_id"],
+                on_retry=record_retry,
+            )
     except ModelUnavailableError as exc:
         return {
             "error_code": exc.code,

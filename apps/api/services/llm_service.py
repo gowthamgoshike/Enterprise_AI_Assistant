@@ -1,14 +1,12 @@
-import httpx
-
+from ai.models.dependencies import get_model_gateway
 from ai.prompts.system_prompts import (
     ENTERPRISE_ASSISTANT_SYSTEM_PROMPT,
 )
-from ai.models.reliability import invoke_model_with_retry
 from core.config import settings
-from core.errors import ModelUnavailableError
 
-OLLAMA_BASE_URL = settings.ollama_base_url
-OLLAMA_MODEL = settings.ollama_model
+MODEL_NAME = settings.model_name
+# Compatibility for evaluation/reporting imports during the provider migration.
+OLLAMA_MODEL = MODEL_NAME
 
 LLM_REQUEST_TIMEOUT_SECONDS = settings.model_timeout_seconds
 
@@ -33,37 +31,9 @@ async def chat_with_model(
 
         full_messages = messages
 
-    request_payload = {
-        "model": OLLAMA_MODEL,
-        "messages": full_messages,
-        "stream": False,
-        "options": {
-            "temperature": 0.1,
-        },
-    }
-
-    if response_format is not None:
-
-        request_payload["format"] = response_format
-
-    async def operation() -> str:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(LLM_REQUEST_TIMEOUT_SECONDS)
-        ) as client:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/chat",
-                json=request_payload,
-            )
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                if response.status_code == 429 or response.status_code >= 500:
-                    raise ModelUnavailableError() from exc
-                raise
-            data = response.json()
-            return data["message"]["content"]
-
-    return await invoke_model_with_retry(operation)
+    kwargs = {"format": response_format} if response_format is not None else {}
+    response = await get_model_gateway().ainvoke(full_messages, **kwargs)
+    return response.content if isinstance(response.content, str) else str(response.content)
 
 
 async def stream_chat_with_model(
@@ -79,26 +49,7 @@ async def stream_chat_with_model(
         *messages,
     ]
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(settings.model_timeout_seconds)
-    ) as client:
-
-        async with client.stream(
-            "POST",
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": full_messages,
-                "stream": True,
-                "options": {
-                    "temperature": 0.1,
-                },
-            },
-        ) as response:
-
-            response.raise_for_status()
-
-            async for line in response.aiter_lines():
-
-                if line:
-                    yield line
+    async for chunk in get_model_gateway().astream(full_messages):
+        content = getattr(chunk, "content", chunk)
+        if content:
+            yield content if isinstance(content, str) else str(content)

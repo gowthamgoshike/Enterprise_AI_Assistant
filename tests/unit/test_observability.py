@@ -38,6 +38,7 @@ def test_json_formatter_adds_context_and_allowlisted_fields():
         )
         record.event = "tool_execution"
         record.tool = "get_transaction"
+        record.provider = "ollama"
         record.status = "success"
         record.password = "must-not-appear"
 
@@ -49,6 +50,7 @@ def test_json_formatter_adds_context_and_allowlisted_fields():
     assert payload["user_id"] == "USER-123"
     assert payload["event"] == "tool_execution"
     assert payload["tool"] == "get_transaction"
+    assert payload["provider"] == "ollama"
     assert payload["status"] == "success"
     assert "password" not in payload
     assert "must-not-appear" not in json.dumps(payload)

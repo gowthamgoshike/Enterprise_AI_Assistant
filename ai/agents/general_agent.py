@@ -1,9 +1,9 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ai.models.langchain_ollama import get_chat_model
+from ai.models.dependencies import get_model_gateway
 
 
-model = get_chat_model()
+model = get_model_gateway()
 
 GENERAL_SYSTEM_PROMPT = """
 You are an enterprise AI engineering

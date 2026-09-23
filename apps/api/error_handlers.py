@@ -76,7 +76,7 @@ def error_response(
 def _app_error_status(error: AppError) -> int:
     if error.code in {"model_unavailable", "database_unavailable"}:
         return 503
-    if error.code in {"tool_timeout"}:
+    if error.code in {"tool_timeout", "model_timeout"}:
         return 504
     if error.code.endswith("_not_found"):
         return 404

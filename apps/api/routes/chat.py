@@ -29,15 +29,17 @@ from ai.graphs.tool_agent_graph import (
     run_agent_graph,
 )
 
-from apps.api.services.llm_service import (
-    OLLAMA_MODEL,
-)
+from ai.models.dependencies import get_model_gateway
+from core.config import settings
 from core.errors import ModelUnavailableError
 from core.observability.context import (
     get_request_id,
     set_request_context,
     set_user_context,
 )
+
+# Compatibility for response schemas and older tests during provider migration.
+OLLAMA_MODEL = settings.model_name
 from core.observability.metrics import AGENT_ERRORS_TOTAL
 from data.database.reliability import is_database_unavailable_error
 
@@ -146,11 +148,7 @@ router = APIRouter(
 
 @router.get("/model/info")
 async def model_info():
-
-    return {
-        "provider": "ollama",
-        "model": OLLAMA_MODEL,
-    }
+    return get_model_gateway().metadata.model_dump(mode="json")
 
 
 @router.post(

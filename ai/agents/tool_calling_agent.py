@@ -6,8 +6,8 @@ from langchain_core.messages import (
     ToolMessage,
 )
 
-from ai.models.langchain_ollama import (
-    get_chat_model,
+from ai.models.dependencies import (
+    get_model_gateway,
 )
 
 from ai.tools.transaction_tools import (
@@ -18,7 +18,7 @@ from ai.schemas.agent import (
 )
 
 
-model = get_chat_model()
+model = get_model_gateway()
 
 tools = [
     get_transaction,

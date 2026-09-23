@@ -11,6 +11,7 @@ EXTRA_FIELDS = (
     "event",
     "tool",
     "model",
+    "provider",
     "latency_ms",
     "model_queue_wait_ms",
     "status",

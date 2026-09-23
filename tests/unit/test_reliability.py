@@ -76,7 +76,10 @@ def test_model_concurrency_is_bounded_and_queue_wait_is_recorded(monkeypatch):
     monkeypatch.setattr(model_reliability, "model_semaphore", asyncio.Semaphore(2))
     active = 0
     peak = 0
-    waits = MODEL_QUEUE_WAIT.labels(model=model_reliability.MODEL_NAME)
+    waits = MODEL_QUEUE_WAIT.labels(
+        provider=model_reliability.MODEL_PROVIDER,
+        model=model_reliability.MODEL_NAME,
+    )
     count_before = next(
         sample.value
         for metric in waits.collect()

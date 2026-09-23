@@ -16,17 +16,27 @@ HTTP_REQUEST_DURATION = Histogram(
 MODEL_REQUESTS_TOTAL = Counter(
     "model_requests_total",
     "Total model requests",
-    ["model", "status"],
+    ["provider", "model", "status"],
 )
 MODEL_LATENCY = Histogram(
     "model_request_duration_seconds",
     "Model request duration",
-    ["model"],
+    ["provider", "model"],
 )
 MODEL_QUEUE_WAIT = Histogram(
     "model_queue_wait_duration_seconds",
     "Time waiting for a model inference slot",
-    ["model"],
+    ["provider", "model"],
+)
+MODEL_TIMEOUTS_TOTAL = Counter(
+    "model_timeouts_total",
+    "Total timed-out model requests",
+    ["provider", "model"],
+)
+MODEL_FAILURES_TOTAL = Counter(
+    "model_failures_total",
+    "Total failed model requests",
+    ["provider", "model"],
 )
 TOOL_CALLS_TOTAL = Counter(
     "tool_calls_total",

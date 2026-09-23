@@ -18,8 +18,9 @@ services:
       DATABASE_URL: postgresql+psycopg2://${DATABASE_USER:?Set DATABASE_USER in .env}:${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}@host.docker.internal:${DATABASE_PORT:-5432}/${DATABASE_NAME:?Set DATABASE_NAME in .env}
       ASYNC_DATABASE_URL: postgresql+asyncpg://${DATABASE_USER}:${DATABASE_PASSWORD}@host.docker.internal:${DATABASE_PORT:-5432}/${DATABASE_NAME}
       LANGGRAPH_DATABASE_URL: postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@host.docker.internal:${DATABASE_PORT:-5432}/${DATABASE_NAME}
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL in .env}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-ollama}
+      MODEL_BASE_URL: http://host.docker.internal:11434
+      MODEL_NAME: ${MODEL_NAME:-${OLLAMA_MODEL:?Set MODEL_NAME in .env}}
       REDIS_URL: redis://redis:6379/0
       REDIS_CACHE_TTL_SECONDS: ${REDIS_CACHE_TTL_SECONDS:-30}
       RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-20}

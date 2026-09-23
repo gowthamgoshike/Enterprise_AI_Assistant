@@ -3,7 +3,8 @@ import re
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from ai.context.config import SUMMARY_TRIGGER_MESSAGES
-from ai.models.langchain_ollama import get_chat_model
+from ai.models.dependencies import get_model_gateway
+from ai.models.gateway import ModelGateway
 from ai.models.reliability import invoke_model_with_retry
 from ai.prompts.memory_prompts import CONVERSATION_SUMMARY_PROMPT
 from ai.schemas.graph_state import EnterpriseAgentState
@@ -63,11 +64,17 @@ Create an updated concise summary.
         SystemMessage(content=CONVERSATION_SUMMARY_PROMPT),
         HumanMessage(content=prompt),
     ]
-    active_model = summary_model if summary_model is not None else get_chat_model()
-    response = await invoke_model_with_retry(
-        lambda: active_model.ainvoke(model_messages),
-        operation_name="conversation_summary",
-    )
+    active_model = summary_model if summary_model is not None else get_model_gateway()
+    if isinstance(active_model, ModelGateway):
+        response = await active_model.ainvoke(
+            model_messages,
+            operation_name="conversation_summary",
+        )
+    else:
+        response = await invoke_model_with_retry(
+            lambda: active_model.ainvoke(model_messages),
+            operation_name="conversation_summary",
+        )
 
     summary = (
         response.content

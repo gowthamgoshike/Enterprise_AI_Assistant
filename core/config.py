@@ -22,8 +22,18 @@ class Settings(BaseSettings):
     database_password: str | None = Field(default=None, repr=False)
     langgraph_database_url: str | None = Field(default=None, repr=False)
 
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "replace-with-model-name"
+    model_provider: Literal["ollama", "vllm"] = Field(
+        default="ollama",
+        validation_alias=AliasChoices("MODEL_PROVIDER", "LLM_PROVIDER"),
+    )
+    model_name: str = Field(
+        default="replace-with-model-name",
+        validation_alias=AliasChoices("MODEL_NAME", "OLLAMA_MODEL", "LLM_MODEL"),
+    )
+    model_base_url: str = Field(
+        default="http://localhost:11434",
+        validation_alias=AliasChoices("MODEL_BASE_URL", "OLLAMA_BASE_URL"),
+    )
     jwt_secret: str = Field(
         validation_alias=AliasChoices("JWT_SECRET_KEY", "JWT_SECRET"),
         repr=False,
@@ -64,6 +74,16 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = (
         "INFO"
     )
+
+    @property
+    def ollama_model(self) -> str:
+        """Backward-compatible name for older call sites."""
+        return self.model_name
+
+    @property
+    def ollama_base_url(self) -> str:
+        """Backward-compatible name for older call sites."""
+        return self.model_base_url
 
     model_config = SettingsConfigDict(
         env_file=".env",

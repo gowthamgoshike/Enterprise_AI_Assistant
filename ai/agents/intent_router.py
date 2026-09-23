@@ -1,11 +1,11 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ai.models.langchain_ollama import get_chat_model
+from ai.models.dependencies import get_model_gateway
 from ai.prompts.router_prompts import INTENT_ROUTER_PROMPT
 from ai.schemas.agent import IntentRoute
 
 
-model = get_chat_model()
+model = get_model_gateway()
 router_model = model.with_structured_output(IntentRoute)
 
 
