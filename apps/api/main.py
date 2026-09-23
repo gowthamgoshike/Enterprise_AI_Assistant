@@ -7,6 +7,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from ai.graphs.tool_agent_graph import build_enterprise_tool_graph
 from ai.memory.postgres_checkpointer import get_checkpoint_database_url
+from ai.models.dependencies import get_model_gateway
 from core.async_database import async_engine
 from core.config import settings
 from core.redis import redis_client
@@ -23,6 +24,25 @@ from apps.api.routes.router import api_router
 
 
 configure_logging(level=getattr(logging, settings.log_level.upper(), logging.INFO))
+logger = logging.getLogger(__name__)
+
+
+async def _log_model_startup() -> None:
+    gateway = get_model_gateway()
+    info = gateway.metadata
+    try:
+        healthy = await gateway.health_check()
+    except Exception:
+        healthy = False
+    logger.info(
+        "model_provider_initialized",
+        extra={
+            "event": "model_startup",
+            "model_provider": str(info.provider),
+            "model": info.model,
+            "model_status": "healthy" if healthy else "unavailable",
+        },
+    )
 
 
 @asynccontextmanager
@@ -34,6 +54,7 @@ async def lifespan(app: FastAPI):
         await checkpointer.setup()
         app.state.enterprise_graph = build_enterprise_tool_graph(checkpointer)
         app.state.checkpoint_store = checkpointer
+        await _log_model_startup()
         try:
             yield
         finally:

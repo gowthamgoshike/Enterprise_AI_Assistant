@@ -34,6 +34,7 @@ class Settings(BaseSettings):
         default="http://localhost:11434",
         validation_alias=AliasChoices("MODEL_BASE_URL", "OLLAMA_BASE_URL"),
     )
+    model_api_key: str | None = Field(default=None, repr=False)
     jwt_secret: str = Field(
         validation_alias=AliasChoices("JWT_SECRET_KEY", "JWT_SECRET"),
         repr=False,

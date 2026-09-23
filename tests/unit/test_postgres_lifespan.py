@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -38,6 +39,11 @@ def test_lifespan_reuses_graph_and_closes_saver(monkeypatch):
         "postgresql://test/checkpoints",
     )
     monkeypatch.setattr(main.AsyncPostgresSaver, "from_conn_string", connect)
+    gateway = SimpleNamespace(
+        metadata=SimpleNamespace(provider="vllm", model="test-model"),
+        health_check=AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(main, "get_model_gateway", lambda: gateway)
     app = FastAPI(lifespan=main.lifespan)
     with TestClient(app) as client:
         compiled = app.state.enterprise_graph
@@ -46,5 +52,6 @@ def test_lifespan_reuses_graph_and_closes_saver(monkeypatch):
         saver.setup.assert_awaited_once()
         assert opened == ["postgresql://test/checkpoints"]
         assert not closed
+        gateway.health_check.assert_awaited_once()
     assert closed == [True]
     assert not hasattr(app.state, "enterprise_graph")

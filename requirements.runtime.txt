@@ -11,6 +11,7 @@ python-dotenv
 
 langchain-core
 langchain-ollama
+langchain-openai
 langgraph
 langgraph-checkpoint-postgres
 

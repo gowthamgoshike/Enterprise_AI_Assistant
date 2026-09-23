@@ -24,6 +24,7 @@ streamlit
 langchain
 langchain-core
 langchain-ollama
+langchain-openai
 langgraph
 langgraph-checkpoint-postgres
 psycopg[binary]
