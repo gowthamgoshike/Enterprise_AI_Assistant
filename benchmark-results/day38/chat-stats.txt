@@ -1,0 +1,59 @@
+===== Measured run 1 =====
+INFO 09-23 18:21:51 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 09-23 18:21:51 [__init__.py:54] - metal -> vllm_metal:register
+INFO 09-23 18:21:51 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 09-23 18:21:53 [__init__.py:272] Platform plugin metal is activated
+INFO 09-23 18:21:53 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+WARNING 09-23 18:21:54 [argparse_utils.py:162] argument 'url' is deprecated
+Using model: mlx-community/Qwen2.5-7B-Instruct-4bit
+Apache Kafka is a distributed streaming platform used to publish-and-subscribe to streams of records, similar to a message queue but with additional features for handling real-time data feeds. It is designed to handle high throughput and fault-tolerance, making it ideal for handling integration and processing of large-scale data streams.
+
+Apache Spark Structured Streaming is a feature of Spark that provides a new, easy-to-use API for processing both batch and streaming data. It leverages the Spark engine to process data in micro-batches, offering low-latency processing and precise windowing capabilities, making it suitable for real-time stream processing. It maintains a logical query plan and updates it incrementally as new data arrives, enabling efficient, stateful operations on streaming data. Both technologies are widely used together in big data processing pipelines, with Kafka serving as a reliable messaging system and Spark Structured Streaming providing advanced processing capabilities on top of streaming data.
+TTFT: 2015.08 ms
+TPS:  16.22 tokens/s (183 tokens in 11.28s)
+===== Measured run 2 =====
+INFO 09-23 18:22:07 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 09-23 18:22:07 [__init__.py:54] - metal -> vllm_metal:register
+INFO 09-23 18:22:07 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 09-23 18:22:09 [__init__.py:272] Platform plugin metal is activated
+INFO 09-23 18:22:10 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+WARNING 09-23 18:22:11 [argparse_utils.py:162] argument 'url' is deprecated
+Using model: mlx-community/Qwen2.5-7B-Instruct-4bit
+Kafka is a distributed message queue system designed for high throughput, high reliability, and fault-tolerance. It is widely used for building real-time data pipelines and stream processing systems. Spark Structured Streaming is a component in Apache Spark that allows users to process and analyze streaming data in a similar way as they would process batch data. It supports various data sources and sinks, enables fault-tolerant processing, and allows for easy handling of windowed queries and state management. By integrating with Kafka, Spark Structured Streaming can efficiently ingest, process, and store real-time data streams, providing scalable and resilient stream processing solutions.
+TTFT: 1868.39 ms
+TPS:  15.42 tokens/s (125 tokens in 8.11s)
+===== Measured run 3 =====
+INFO 09-23 18:22:20 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 09-23 18:22:20 [__init__.py:54] - metal -> vllm_metal:register
+INFO 09-23 18:22:20 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 09-23 18:22:22 [__init__.py:272] Platform plugin metal is activated
+INFO 09-23 18:22:23 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+WARNING 09-23 18:22:24 [argparse_utils.py:162] argument 'url' is deprecated
+Using model: mlx-community/Qwen2.5-7B-Instruct-4bit
+Kafka is a distributed streaming platform that facilitates the capture, storage, and processing of real-time data streams. It provides durable, fault-tolerant, and scalable publish-subscribe message queues, enabling seamless integration with various data processing systems.
+
+Spark Structured Streaming is a feature of Apache Spark that processes data streams in a high-performance, fault-tolerant, and scalable manner. It takes a DataFrame or Dataset API approach to streaming, allowing for complex transformations and aggregations, and supports both batch and streaming data. By leveraging the power of Spark, it provides end-to-end batch and stream processing with unified APIs, making it easier to develop, maintain, and scale real-time data pipelines. Combining Kafka with Spark Structured Streaming enables efficient data ingestion, processing, and analysis in real-time applications.
+TTFT: 1675.55 ms
+TPS:  17.00 tokens/s (161 tokens in 9.47s)
+===== Measured run 4 =====
+INFO 09-23 18:22:35 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 09-23 18:22:35 [__init__.py:54] - metal -> vllm_metal:register
+INFO 09-23 18:22:35 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 09-23 18:22:37 [__init__.py:272] Platform plugin metal is activated
+INFO 09-23 18:22:38 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+WARNING 09-23 18:22:39 [argparse_utils.py:162] argument 'url' is deprecated
+Using model: mlx-community/Qwen2.5-7B-Instruct-4bit
+Apache Kafka is a distributed streaming platform that allows for the building of real-time data pipelines and streaming apps. It is designed for high throughput, fault-tolerance, and horizontal scalability. On the other hand, Spark Structured Streaming is a component of Apache Spark that processes streaming data as a continuous flow of incoming data, using familiar SQL and structured APIs. It enables processing of live and historical data together, providing unified analytics. Combining Kafka with Spark Structured Streaming allows for efficient, fault-tolerant, and scalable real-time data processing, making it ideal for building real-time analytics and event-driven architectures.
+TTFT: 1804.51 ms
+TPS:  15.52 tokens/s (122 tokens in 7.86s)
+===== Measured run 5 =====
+INFO 09-23 18:22:48 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 09-23 18:22:48 [__init__.py:54] - metal -> vllm_metal:register
+INFO 09-23 18:22:48 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 09-23 18:22:50 [__init__.py:272] Platform plugin metal is activated
+INFO 09-23 18:22:51 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+WARNING 09-23 18:22:52 [argparse_utils.py:162] argument 'url' is deprecated
+Using model: mlx-community/Qwen2.5-7B-Instruct-4bit
+Kafka is a distributed stream-processing software that enables the capture, storage, and processing of real-time data streams. It provides high throughput, low-latency data feeds, and horizontal scaling capabilities by storing data in a publish-subscribe model. Spark Structured Streaming is an extension of Apache Spark designed for real-time big data processing, capable of handling live data streams as well as batch data. It supports a wide range of data sources and sinks, stateful transformations, and window operations, providing a unified processing model for batch and stream processing. Together, Kafka stream data to Spark Structured Streaming for processing, enabling scalable, fault-tolerant, and efficient real-time analytics.
+TTFT: 1859.94 ms
+TPS:  15.70 tokens/s (136 tokens in 8.66s)

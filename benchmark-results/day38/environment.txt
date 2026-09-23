@@ -1,0 +1,21 @@
+Wed Sep 23 18:20:43 EDT 2026
+ProductName:		macOS
+ProductVersion:		26.3
+BuildVersion:		25D125
+arm64
+INFO 09-23 18:20:44 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 09-23 18:20:44 [__init__.py:54] - metal -> vllm_metal:register
+INFO 09-23 18:20:44 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 09-23 18:20:46 [__init__.py:272] Platform plugin metal is activated
+INFO 09-23 18:20:47 [importing.py:98] Triton not installed or not compatible; certain GPU-related functions will not be available.
+0.30.0+cpu
+      Model Name: MacBook Pro
+      Chip: Apple M5
+      Memory: 24 GB
+model: mlx-community/Qwen2.5-7B-Instruct-4bit
+quantization: 4-bit
+provider: vLLM Metal
+context_limit: 8192
+application_concurrency: 2
+temperature: 0.1
+endpoint: http://localhost:8001/v1
